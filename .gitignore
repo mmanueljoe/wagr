@@ -57,6 +57,20 @@ supabase/.branches
 supabase/.temp
 supabase/.env
 
+
+# 1. Ignore the folder
+.vscode/
+
+# 2. CRITICAL: Un-ignore the folder
+!.vscode/
+
+# 3. Ignore everything inside the folder
+.vscode/*
+
+# 4. Now un-ignore the specific file
+!.vscode/settings.json
+
+
 # Misc
 .cache/
 .parcel-cache/

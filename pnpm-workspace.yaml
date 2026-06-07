@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Native deps with post-install build steps. We explicitly allow these so that
+# `pnpm install` runs their build scripts during install. If a new native dep
+# needs to be added here, review the script first — it runs with your local
+# user's permissions.
+onlyBuiltDependencies:
+  - sharp
+  - unrs-resolver
