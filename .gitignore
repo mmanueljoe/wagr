@@ -77,3 +77,6 @@ supabase/.env
 .eslintcache
 *.pid
 *.pid.lock
+
+# /pr skill draft output (regenerated each run)
+.pr-draft.md
