@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Wagr brand tokens — single source of truth for design colours, fonts, radii.
+   Mirrors docs/brand/design-system.md. Token-name to utility mapping is automatic:
+   --color-wagr-navy → bg-wagr-navy, text-wagr-navy, border-wagr-navy
+   --radius-wagr-lg  → rounded-wagr-lg
+   --font-heading    → font-heading
+*/
+@theme {
+  --color-wagr-navy: #0d1b40;
+  --color-wagr-gold: #f5a623;
+  --color-wagr-white: #fafaf7;
+  --color-wagr-black: #1a1a2e;
+
+  --color-wagr-navy-light: #1a2d5a;
+  --color-wagr-gold-light: #fbb845;
+  --color-wagr-gray: #888780;
+  --color-wagr-gray-light: #f1efe8;
+
+  --font-heading: var(--font-heading), "Space Grotesk", sans-serif;
+  --font-body: var(--font-body), "Inter", sans-serif;
+
+  --radius-wagr: 8px;
+  --radius-wagr-lg: 12px;
+  --radius-wagr-xl: 16px;
+}
+
+/* shadcn/ui semantic tokens — point at the Wagr palette above. */
+:root {
+  --background: var(--color-wagr-white);
+  --foreground: var(--color-wagr-black);
+  --primary: var(--color-wagr-navy);
+  --primary-foreground: #ffffff;
+  --accent: var(--color-wagr-gold);
+  --accent-foreground: var(--color-wagr-navy);
+  --muted: var(--color-wagr-gray-light);
+  --muted-foreground: var(--color-wagr-gray);
+  --border: var(--color-wagr-gray-light);
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
