@@ -104,10 +104,18 @@ These are widely-accepted production-grade rules. Follow them.
   `PascalCase`. File names are `kebab-case`.
 
 ### Comments and naming
-- Don't add comments that just describe what the code does. Code that needs a
-  "what" comment should be renamed instead.
-- Comments are for *why*: a non-obvious business rule, a workaround for a
-  Moolre quirk, a link to a relevant ticket.
+- **Default to writing no comments.** Only add a comment when removing it
+  would confuse a future reader.
+- The only valid comments are: a non-obvious business rule, a workaround for
+  an external quirk (Moolre, Meta, Supabase), a link to a relevant ticket or
+  external doc, or a brief warning above a piece of code that looks wrong
+  but is correct.
+- Never comment what the code does. If a reader can't tell what a function
+  does from its name and signature, rename it instead of commenting.
+- Never leave commented-out code in a commit. Delete it; git remembers.
+- JSDoc on exported public functions is allowed when the function is part of
+  a stable contract (e.g. helpers in `packages/types`), but keep it to one
+  short line. No multi-paragraph JSDoc.
 - Function names describe what they do. `getEarnedWage(employeeId)` not
   `processEmployee(employeeId)`.
 
