@@ -25,7 +25,7 @@ Steps:
    - **type**: the dominant Conventional Commit type from `git log main..HEAD --oneline`. If the commits are a clear mix of types, stop and ask the user which type to use for the squashed commit.
    - **slug**: from step 2. For non-feature branches, use the branch prefix's natural scope (e.g. `chore: ...` with no scope).
    - **subject**: one short line derived from the first commit's subject line, or the dominant commit subject if there are many. Imperative mood, under 72 chars, no trailing period.
-7. Write the filled template to `.pr-draft.md` at the repo root and display the rendered content to the user.
+7. Write the filled template to `.pr-draft.md` at the repo root. **Do not paste the rendered body back into chat** — the user reads it from the file. Just confirm in one short line that the draft was written and report the proposed PR title.
 8. Ask: "Open the PR now with `gh pr create --title \"<title>\" --body-file .pr-draft.md`, or leave the draft for you to edit?"
    - If the user says yes, run the `gh pr create` command.
    - If the user says no or wants to edit, leave `.pr-draft.md` in place. The file is gitignored, so it's safe to keep at the repo root for as long as the user needs.
