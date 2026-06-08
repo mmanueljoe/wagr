@@ -1,6 +1,7 @@
 {
   "name": "wagr",
   "version": "0.0.0",
+  "type": "module",
   "private": true,
   "description": "Earned-wage-access platform for Ghanaian SME workers. Don't wait for payday.",
   "engines": {
@@ -17,9 +18,10 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:ussd-sim": "pnpm --filter api test:ussd-sim",
-    "db:migrate": "supabase migration up",
-    "db:types": "supabase gen types typescript --local > packages/types/src/supabase.ts",
-    "db:seed": "pnpm --filter api db:seed",
+    "db:link": "pnpm dlx supabase link",
+    "db:push": "pnpm dlx supabase db push",
+    "db:types": "pnpm dlx supabase gen types typescript --linked > packages/types/src/supabase.ts",
+    "db:seed": "pnpm --filter @wagr/api db:seed",
     "prepare": "husky"
   },
   "devDependencies": {

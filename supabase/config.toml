@@ -1,0 +1,10 @@
+# Supabase local config — minimal, matches the cloud project for migrations only.
+# We don't run `supabase start` (no local Postgres in Docker); migrations are
+# pushed to the cloud project via `pnpm db:push`. See docs/architecture/setup.md
+# for the apply flow.
+
+project_id = "wagr-dev"
+
+[db]
+# Postgres version pinned to match what Supabase cloud serves by default.
+major_version = 15
