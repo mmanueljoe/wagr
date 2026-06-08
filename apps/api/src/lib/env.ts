@@ -24,6 +24,8 @@ export const env = createEnv({
 
     OPENAI_API_KEY: z.string().min(1),
 
+    WEB_URL: z.string().url().default('http://localhost:3000'),
+
     SENTRY_DSN: z.string().url().optional(),
   },
   runtimeEnv: process.env,

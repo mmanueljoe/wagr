@@ -1,15 +1,19 @@
+import cors from 'cors'
 import express from 'express'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { errorHandler } from './middleware/error-handler'
+import { authRouter } from './routes/auth'
 import { healthRouter } from './routes/health'
 
 const app = express()
 
 app.disable('x-powered-by')
+app.use(cors({ origin: env.WEB_URL, credentials: true }))
 app.use(express.json({ limit: '1mb' }))
 
 app.use(healthRouter)
+app.use(authRouter)
 
 app.use(errorHandler)
 
