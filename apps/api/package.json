@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "@t3-oss/env-core": "^0.13.0",
+    "@upstash/redis": "^1.38.0",
     "@wagr/types": "workspace:*",
     "express": "^5.1.0",
     "pino": "^9.5.0",
