@@ -13,4 +13,9 @@ export const env = createEnv({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   },
   emptyStringAsUndefined: true,
+  // CI sets SKIP_ENV_VALIDATION=1 because the build step doesn't have access
+  // to our public Supabase keys (and shouldn't — they belong in Vercel).
+  // Dev and prod still validate; this only skips the check at `next build`
+  // time inside the GitHub runner, where the keys aren't injected.
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
 })
