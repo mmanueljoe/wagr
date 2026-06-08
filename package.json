@@ -1,6 +1,7 @@
 {
   "name": "wagr",
   "version": "0.0.0",
+  "type": "module",
   "private": true,
   "description": "Earned-wage-access platform for Ghanaian SME workers. Don't wait for payday.",
   "engines": {
