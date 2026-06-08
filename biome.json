@@ -16,7 +16,9 @@
       "**/.vercel",
       "**/build",
       "**/pnpm-lock.yaml",
-      "packages/types/src/supabase.ts"
+      "packages/types/src/supabase.ts",
+      ".claude/settings.json",
+      ".claude/settings.local.json"
     ]
   },
   "formatter": {

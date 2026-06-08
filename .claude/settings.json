@@ -31,8 +31,6 @@
       "Bash(rm -rf*)",
       "Bash(npm install*)",
       "Bash(yarn install*)",
-      "Edit(supabase/migrations/**)",
-      "Edit(packages/types/src/supabase.ts)",
       "Edit(pnpm-lock.yaml)",
       "Edit(.env)",
       "Edit(.env.local)",

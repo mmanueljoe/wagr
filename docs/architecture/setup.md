@@ -90,19 +90,44 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ## Supabase Setup
 
-1. Go to supabase.com and create a new project
-2. Name it: wagr-dev
-3. Copy the Project URL and keys from Settings → API into your .env files
-4. Go to the SQL Editor and run the migration file:
+### One-time, per developer
+
+1. Go to **supabase.com** and create a new project named `wagr-dev`.
+2. From **Project Settings → API**, copy three values into your `apps/api/.env`:
+   - Project URL → `SUPABASE_URL`
+   - `anon` key → `SUPABASE_ANON_KEY`
+   - `service_role` key → `SUPABASE_SERVICE_KEY` (also into `apps/web/.env.local` as `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+3. Link the repo to your cloud project. You'll be prompted for the project
+   ref (the subdomain part of your project URL) and the database password
+   you set when creating the project:
+   ```bash
+   pnpm db:link
+   ```
+   This writes a `supabase/.temp/` folder (gitignored) with link metadata.
+
+### Applying migrations
+
+Migration files live in `supabase/migrations/`. Each one is a `*.sql` file
+with a timestamp prefix and is **immutable once merged to `main`** — to
+change the schema, write a new migration.
 
 ```bash
-# From the project root
-cat docs/architecture/schema.sql | pbcopy
-# Paste into Supabase SQL Editor and run
+# Apply all pending migrations to your linked cloud project
+pnpm db:push
+
+# Regenerate the typed Supabase client (run after every schema change)
+pnpm db:types
 ```
 
-5. Enable Row Level Security on these tables: employers, employees, advance_requests
-6. Add the RLS policies from docs/architecture/rls-policies.sql
+`pnpm db:types` overwrites `packages/types/src/supabase.ts`. That file is
+generated — don't edit it by hand.
+
+### About Row-Level Security
+
+RLS is enabled on `employers`, `employees`, `advance_requests`, `repayments`,
+and `audit_log`. The api uses the service-role key, which bypasses RLS.
+Policies exist so that a leaked anon key would still be safe (it can only
+read the employer's own rows).
 
 ---
 
