@@ -113,6 +113,16 @@ These are widely-accepted production-grade rules. Follow them.
 - Never comment what the code does. If a reader can't tell what a function
   does from its name and signature, rename it instead of commenting.
 - Never leave commented-out code in a commit. Delete it; git remembers.
+- **Builder-voice when a comment is justified.** Write the *why* in plain
+  English, first-person, the way I'd naturally explain it to myself while
+  building — not in polished engineer voice. Example:
+  `// Pay period runs from the day after last payday to today's payday.`
+  `// Doing it this way because that's how salaries actually work in Ghana.`
+  Not: `// Period anchored on employer's pay_date; window ends on pay_date.`
+- **Order of the two rules matters.** The builder-voice rule applies *only
+  after* the first gate passes — "would removing this comment lose
+  information?" If no, don't write a comment at all. Voice is about the few
+  comments that survive the gate, not about commenting more.
 - JSDoc on exported public functions is allowed when the function is part of
   a stable contract (e.g. helpers in `packages/types`), but keep it to one
   short line. No multi-paragraph JSDoc.
