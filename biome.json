@@ -17,6 +17,7 @@
       "**/build",
       "**/pnpm-lock.yaml",
       "packages/types/src/supabase.ts",
+      "apps/web/src/components/ui/**",
       ".claude/settings.json",
       ".claude/settings.local.json"
     ]

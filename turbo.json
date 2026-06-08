@@ -6,7 +6,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
-      "env": ["NODE_ENV"]
+      "env": ["NODE_ENV", "SKIP_ENV_VALIDATION"]
     },
     "dev": {
       "cache": false,

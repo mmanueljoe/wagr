@@ -28,34 +28,75 @@
   --radius-wagr-xl: 16px;
 }
 
-/* shadcn/ui semantic tokens — point at the Wagr palette above. */
+/* shadcn semantic tokens — the full set shadcn components depend on, mapped
+   onto the Wagr palette above. Any shadcn component picks these up automatically.
+   Naming follows shadcn convention: `name` is the surface, `name-foreground` is
+   the text on it. */
 :root {
   --background: var(--color-wagr-white);
   --foreground: var(--color-wagr-black);
+
+  --card: #ffffff;
+  --card-foreground: var(--color-wagr-black);
+
+  --popover: #ffffff;
+  --popover-foreground: var(--color-wagr-black);
+
   --primary: var(--color-wagr-navy);
   --primary-foreground: #ffffff;
-  --accent: var(--color-wagr-gold);
-  --accent-foreground: var(--color-wagr-navy);
+
+  --secondary: var(--color-wagr-gray-light);
+  --secondary-foreground: var(--color-wagr-navy);
+
   --muted: var(--color-wagr-gray-light);
   --muted-foreground: var(--color-wagr-gray);
+
+  /* `--accent` is shadcn's "hover/active surface" — kept subtle (gray) so
+     interactions feel soft. Use the wagr-gold utility class directly for
+     real gold accents (badges, highlights). */
+  --accent: var(--color-wagr-gray-light);
+  --accent-foreground: var(--color-wagr-navy);
+
+  --destructive: #dc2626;
+
   --border: var(--color-wagr-gray-light);
+  --input: var(--color-wagr-gray-light);
+  --ring: var(--color-wagr-navy);
+
   --radius: 0.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-body);
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+  }
 }
