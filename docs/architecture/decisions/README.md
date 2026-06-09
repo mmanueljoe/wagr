@@ -56,3 +56,7 @@ What else we looked at and why we passed.
 | [004](004-biome-over-eslint-prettier.md) | Biome over ESLint + Prettier |
 | [005](005-no-provider-abstraction-over-moolre.md) | No provider abstraction over Moolre |
 | [006](006-tailwind-v4-css-first.md) | Tailwind v4 CSS-first configuration |
+| [007](007-bff-pattern-for-auth.md) | Backend-for-Frontend pattern for authentication |
+| [008](008-money-as-integer-minor-units.md) | Money as integer minor-units (pesewas) |
+| [009](009-idempotency-on-money-operations.md) | Idempotency keys on every money-moving request |
+| [010](010-audit-log-mandatory.md) | Append-only audit log on every state change |
