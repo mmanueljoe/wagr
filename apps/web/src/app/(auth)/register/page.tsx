@@ -42,7 +42,7 @@ const INDUSTRY_LABELS: Record<(typeof EMPLOYER_INDUSTRIES)[number], string> = {
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { register, isSubmitting, error } = useRegister()
+  const register = useRegister()
 
   const form = useForm<RegisterEmployerInput>({
     resolver: zodResolver(registerEmployerSchema),
@@ -55,9 +55,10 @@ export default function RegisterPage() {
     mode: 'onBlur',
   })
 
-  async function onSubmit(values: RegisterEmployerInput) {
-    const result = await register(values)
-    if (result.ok) router.push('/dashboard')
+  function onSubmit(values: RegisterEmployerInput) {
+    register.mutate(values, {
+      onSuccess: () => router.push('/dashboard'),
+    })
   }
 
   return (
@@ -191,14 +192,14 @@ export default function RegisterPage() {
             />
           </FieldGroup>
 
-          {error && (
+          {register.error && (
             <p className="text-sm text-destructive" role="alert">
-              {error.message}
+              {register.error.message}
             </p>
           )}
 
-          <Button type="submit" disabled={isSubmitting} className="w-full">
-            {isSubmitting ? 'Creating account…' : 'Create account'}
+          <Button type="submit" disabled={register.isPending} className="w-full">
+            {register.isPending ? 'Creating account…' : 'Create account'}
           </Button>
         </form>
       </Form>

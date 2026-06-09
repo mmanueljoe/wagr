@@ -26,3 +26,18 @@ export const registerEmployerSchema = z.object({
 })
 
 export type RegisterEmployerInput = z.infer<typeof registerEmployerSchema>
+
+export const loginEmployerSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+})
+
+export type LoginEmployerInput = z.infer<typeof loginEmployerSchema>
+
+// The shape every auth success endpoint (register, login, /me) returns.
+// Same keys, same types, every time — the frontend learns it once.
+export interface AuthUser {
+  id: string
+  employer_id: string
+  email: string
+}
