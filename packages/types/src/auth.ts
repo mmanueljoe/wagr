@@ -34,10 +34,25 @@ export const loginEmployerSchema = z.object({
 
 export type LoginEmployerInput = z.infer<typeof loginEmployerSchema>
 
+// Funding model — how the employer pays for advances.
+// model1 = pre-funded float (employer tops up Wagr, advances drawn from float)
+// model2 = Wagr fronts cash, recovers on payday from employer
+// null   = employer hasn't picked yet (gate them at /onboarding/funding-model)
+export const FUNDING_MODELS = ['model1', 'model2'] as const
+export type FundingModel = (typeof FUNDING_MODELS)[number]
+
+export const setFundingModelSchema = z.object({
+  funding_model: z.enum(FUNDING_MODELS),
+})
+
+export type SetFundingModelInput = z.infer<typeof setFundingModelSchema>
+
 // The shape every auth success endpoint (register, login, /me) returns.
 // Same keys, same types, every time — the frontend learns it once.
+// funding_model is null until the employer completes onboarding.
 export interface AuthUser {
   id: string
   employer_id: string
   email: string
+  funding_model: FundingModel | null
 }

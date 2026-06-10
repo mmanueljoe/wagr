@@ -28,7 +28,7 @@ export async function logoutHandler(req: Request, res: Response) {
   res.status(204).end()
 }
 
-export function meHandler(req: Request, res: Response) {
+export async function meHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
-  res.json(getMe(req.user))
+  res.json(await getMe(req.user))
 }
