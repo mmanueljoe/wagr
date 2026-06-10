@@ -15,6 +15,7 @@ import { useLogin } from '@/hooks/use-login'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { type DefaultValues, useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -40,6 +41,7 @@ export default function LoginPage() {
       // funding-model step instead of the dashboard. Middleware would catch
       // it too, but doing it here avoids a flash of the redirect.
       onSuccess: (user) => {
+        toast.success('Welcome back')
         router.push(user.funding_model ? '/dashboard' : '/onboarding/funding-model')
       },
     })
@@ -84,12 +86,6 @@ export default function LoginPage() {
               </FormItem>
             )}
           />
-
-          {login.error && (
-            <p className="text-sm text-destructive" role="alert">
-              {login.error.message}
-            </p>
-          )}
 
           <Button type="submit" disabled={login.isPending} className="w-full">
             {login.isPending ? 'Logging in…' : 'Log in'}
