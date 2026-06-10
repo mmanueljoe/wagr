@@ -2,7 +2,7 @@
 
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 
 interface PhoneInputProps
   extends Omit<React.ComponentProps<'input'>, 'onChange' | 'value' | 'type'> {
@@ -12,17 +12,32 @@ interface PhoneInputProps
 
 // Ghana-only phone input. User sees: [🇬🇭 +233] [ 24 412 3456 ]
 // User can paste 024…, +233…, raw digits — we strip and normalise.
-// The value we hand back via onChange is always +233 + 9 digits, ready for the
-// schema (registerEmployerSchema's GH_PHONE_REGEX).
+//
+// We hold the in-progress digits in local state and only sync to the form
+// (via onChange) once the user has either a complete 9-digit number or an
+// empty field. If we forwarded partial values the form would round-trip them
+// back as the controlled value and wipe the user's typing on every keystroke.
 export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(function PhoneInput(
   { value = '', onChange, className, ...props },
   ref,
 ) {
-  const localDigits = stripToLocalNineDigits(value)
+  const [localDigits, setLocalDigits] = useState(() => stripToLocalNineDigits(value))
+
+  // Keep local state in sync if the parent value changes from outside
+  // (form reset, programmatic set, etc.).
+  useEffect(() => {
+    const fromProp = stripToLocalNineDigits(value)
+    setLocalDigits((prev) => (fromProp === prev ? prev : fromProp))
+  }, [value])
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const next = stripToLocalNineDigits(e.target.value)
-    onChange?.(next.length === 9 ? `+233${next}` : '')
+    setLocalDigits(next)
+    // Only push to the form when the user has a complete number or has
+    // cleared the field — keeps form state strictly E.164 or empty.
+    if (next.length === 9) onChange?.(`+233${next}`)
+    else if (next.length === 0) onChange?.('')
+    else onChange?.('')
   }
 
   return (

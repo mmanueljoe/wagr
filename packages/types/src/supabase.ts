@@ -203,7 +203,7 @@ export type Database = {
           created_at: string
           email: string
           float_balance: number
-          funding_model: string
+          funding_model: string | null
           id: string
           industry: string
           pay_date: number
@@ -215,7 +215,7 @@ export type Database = {
           created_at?: string
           email: string
           float_balance?: number
-          funding_model: string
+          funding_model?: string | null
           id: string
           industry: string
           pay_date: number
@@ -227,7 +227,7 @@ export type Database = {
           created_at?: string
           email?: string
           float_balance?: number
-          funding_model?: string
+          funding_model?: string | null
           id?: string
           industry?: string
           pay_date?: number

@@ -28,7 +28,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col font-body bg-wagr-white text-wagr-black">
+      <body
+        suppressHydrationWarning
+        className="min-h-full flex flex-col font-body bg-wagr-white text-wagr-black"
+      >
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>

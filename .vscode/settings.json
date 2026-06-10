@@ -2,5 +2,6 @@
   "css.lint.unknownAtRules": "ignore",
 
   "// SonarLint exclusions": "Generated files — we do not author or own these, so linting them is just noise. Same scope as biome.json's ignore list.",
-  "sonarlint.analysisExcludesStandalone": "**/packages/types/src/supabase.ts,**/*.generated.ts,**/dist/**,**/.next/**,**/.turbo/**"
+  "sonarlint.analysisExcludesStandalone": "**/packages/types/src/supabase.ts,**/*.generated.ts,**/dist/**,**/.next/**,**/.turbo/**",
+  "postman.settings.dotenv-detection-notification-visibility": false
 }

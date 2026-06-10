@@ -57,7 +57,9 @@ export default function RegisterPage() {
 
   function onSubmit(values: RegisterEmployerInput) {
     register.mutate(values, {
-      onSuccess: () => router.push('/dashboard'),
+      // Brand-new employer always lands at funding-model selection — they
+      // haven't picked one yet (funding_model is null fresh out of register).
+      onSuccess: () => router.push('/onboarding/funding-model'),
     })
   }
 
