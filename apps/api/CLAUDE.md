@@ -17,26 +17,49 @@ Read [the root CLAUDE.md](../../CLAUDE.md) first. This file is the api-specific 
 ```
 apps/api/src/
 ├── index.ts                  # App entry — wires middleware + routes + listen
+├── errors/
+│   └── app-error.ts          # AppError class — the only error type we throw
 ├── lib/
 │   ├── env.ts                # Zod-validated env (the only place that reads process.env)
 │   ├── logger.ts             # pino logger
+│   ├── audit.ts              # audit_log writer (per ADR 010)
+│   ├── session.ts            # Redis-backed session — opaque ID, HttpOnly cookie (BFF / ADR 007)
 │   ├── moolre.ts             # All Moolre HTTP calls live here (added per [moolre-sandbox-tested])
-│   ├── supabase.ts           # Supabase client (added per [db-schema])
+│   ├── supabase.ts           # Supabase service-role + anon-key auth clients (added per [db-schema])
 │   ├── redis.ts              # Upstash Redis client (added per [redis-setup])
-│   └── ussd-session.ts       # Redis session helpers (added per [ussd-session-handler])
+│   └── ussd-session.ts       # Redis USSD session helpers (added per [ussd-session-handler])
 ├── middleware/
-│   ├── error-handler.ts      # Global error handler — the only place we format errors
-│   ├── validate.ts           # Zod request body validator (added when first route needs it)
-│   └── auth.ts               # JWT/session verifier (added per [employer-login])
+│   ├── error-handler.ts      # Global handler — formats AppError to { error: { code, message } }
+│   ├── validate.ts           # Zod request body validator — throws AppError on failure
+│   └── require-auth.ts       # Reads session cookie, attaches req.user, throws on miss
+├── services/
+│   ├── auth-service.ts       # registerEmployer, loginEmployer, getMe
+│   └── employer-service.ts   # setFundingModel
+├── controllers/
+│   ├── auth-controller.ts    # Thin handlers for /auth/* — no business logic
+│   └── employer-controller.ts # Thin handler for /employer/*
 └── routes/
     ├── health.ts             # /health (liveness), /ready (deps)
-    ├── auth.ts               # POST /auth/register, POST /auth/login
-    ├── employees.ts          # GET/POST/PATCH /employees
+    ├── auth.ts               # POST /auth/register, /login, /logout, GET /auth/me
+    ├── employer.ts           # PATCH /employer/funding-model
+    ├── employees.ts          # GET/POST/PATCH /employees (added per [single-employee-add] etc.)
     ├── advances.ts           # POST /advances/request, GET /advances
     ├── payroll.ts            # POST /payroll/run
     ├── webhooks.ts           # POST /webhooks/moolre (Payments callbacks)
     └── ussd.ts               # POST /ussd (Moolre USSD callbacks)
 ```
+
+## Layered architecture (per ADR 011 + the root CLAUDE.md engineering practices)
+
+Imports flow one direction: **route → controller → service → lib**. Never the reverse.
+
+- **Routes** wire URL + middleware + controller. No logic.
+- **Controllers** read req, call a service, send res. No business logic. They
+  throw or propagate — never call `res.status(N).json(...)` for errors.
+- **Services** contain business rules. Pure functions where possible. Throw
+  `AppError` on failure. Know nothing about Express.
+- **Lib** wraps external systems (Supabase, Redis, Moolre, OpenAI). The only
+  place we mock when testing.
 
 ## Api-specific rules
 

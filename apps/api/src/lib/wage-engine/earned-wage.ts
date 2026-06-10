@@ -1,18 +1,23 @@
+import type { MoneyPesewas } from '@wagr/types'
+
 // What this does: answers "how much of this month's salary has this worker
 // already earned today?" That's the number we let them take an advance against.
 //
 // Formula: (days worked so far in this period / total days in the period) * monthly salary.
-// We round DOWN to the nearest cedi. Over-paying by 1 cedi means the employer
-// is short on payday, which is worse than under-paying the worker by 1 cedi.
+// All monetary values are integer pesewas (GHS 1.00 = 100 pesewas). See ADR 008.
+// Result is floored at the cedi level — we'd rather under-pay by 1 cedi than
+// over-pay by 1 cedi (over-paying means the employer is short on payday).
 
 export interface EarnedWageInput {
-  monthlySalary: number
+  monthlySalaryPesewas: MoneyPesewas
   payDate: number
   startDate: Date
   today: Date
 }
 
-export function calculateEarnedWage(input: EarnedWageInput): number {
+const PESEWAS_PER_CEDI = 100
+
+export function calculateEarnedWage(input: EarnedWageInput): MoneyPesewas {
   const period = getCurrentPayPeriod(input.payDate, input.today)
 
   if (input.startDate > period.end) return 0
@@ -23,7 +28,10 @@ export function calculateEarnedWage(input: EarnedWageInput): number {
   const daysWorked = daysBetweenInclusive(countingStart, input.today)
   const periodDays = daysBetweenInclusive(period.start, period.end)
 
-  return Math.floor((daysWorked / periodDays) * input.monthlySalary)
+  // Floor to the nearest cedi to match the business rule. We compute in
+  // pesewas, divide-floor to cedis, multiply back to pesewas for storage.
+  const earnedPesewasRaw = (daysWorked / periodDays) * input.monthlySalaryPesewas
+  return Math.floor(earnedPesewasRaw / PESEWAS_PER_CEDI) * PESEWAS_PER_CEDI
 }
 
 interface PayPeriod {
