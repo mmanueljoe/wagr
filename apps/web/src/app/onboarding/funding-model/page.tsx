@@ -7,6 +7,7 @@ import type { FundingModel } from '@wagr/types'
 import { Check, Wallet, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 interface ModelOption {
   id: FundingModel
@@ -49,7 +50,10 @@ export default function FundingModelPage() {
   function onContinue() {
     if (!selected) return
     setFundingModel.mutate(selected, {
-      onSuccess: () => router.push('/dashboard'),
+      onSuccess: () => {
+        toast.success("You're all set")
+        router.push('/dashboard')
+      },
     })
   }
 
@@ -72,12 +76,6 @@ export default function FundingModelPage() {
           />
         ))}
       </div>
-
-      {setFundingModel.error && (
-        <p className="text-sm text-destructive mb-4" role="alert">
-          {setFundingModel.error.message}
-        </p>
-      )}
 
       <Button
         onClick={onContinue}

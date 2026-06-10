@@ -1,4 +1,5 @@
 import { QueryProvider } from '@/components/shared/query-provider'
+import { Toaster } from '@/components/ui/sonner'
 import type { Metadata } from 'next'
 import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
@@ -33,6 +34,7 @@ export default function RootLayout({
         className="min-h-full flex flex-col font-body bg-wagr-white text-wagr-black"
       >
         <QueryProvider>{children}</QueryProvider>
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   )

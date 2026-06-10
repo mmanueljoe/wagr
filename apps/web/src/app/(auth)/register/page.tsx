@@ -30,6 +30,7 @@ import {
 import { AtSign, Building2, CalendarDays } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { type DefaultValues, useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 
 const INDUSTRY_LABELS: Record<(typeof EMPLOYER_INDUSTRIES)[number], string> = {
   healthcare: 'Healthcare',
@@ -59,7 +60,10 @@ export default function RegisterPage() {
     register.mutate(values, {
       // Brand-new employer always lands at funding-model selection — they
       // haven't picked one yet (funding_model is null fresh out of register).
-      onSuccess: () => router.push('/onboarding/funding-model'),
+      onSuccess: () => {
+        toast.success('Account created')
+        router.push('/onboarding/funding-model')
+      },
     })
   }
 
@@ -193,12 +197,6 @@ export default function RegisterPage() {
               )}
             />
           </FieldGroup>
-
-          {register.error && (
-            <p className="text-sm text-destructive" role="alert">
-              {register.error.message}
-            </p>
-          )}
 
           <Button type="submit" disabled={register.isPending} className="w-full">
             {register.isPending ? 'Creating account…' : 'Create account'}

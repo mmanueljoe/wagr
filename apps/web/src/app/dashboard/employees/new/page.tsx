@@ -31,6 +31,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { type DefaultValues, useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 
 const NETWORK_LABELS: Record<(typeof EMPLOYEE_NETWORKS)[number], string> = {
   mtn: 'MTN',
@@ -66,7 +67,12 @@ export default function NewEmployeePage() {
     setSalaryError(null)
     createEmployee.mutate(
       { ...values, monthly_salary_pesewas: pesewas },
-      { onSuccess: () => router.push('/dashboard/employees') },
+      {
+        onSuccess: (employee) => {
+          toast.success(`${employee.full_name} added`)
+          router.push('/dashboard/employees')
+        },
+      },
     )
   }
 
@@ -189,12 +195,6 @@ export default function NewEmployeePage() {
                   </FormItem>
                 )}
               />
-
-              {createEmployee.error && (
-                <p className="text-sm text-destructive" role="alert">
-                  {createEmployee.error.message}
-                </p>
-              )}
 
               <div className="flex gap-3 pt-2">
                 <Button type="submit" disabled={createEmployee.isPending} className="flex-1">

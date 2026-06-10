@@ -6,6 +6,7 @@
 import { Button } from '@/components/ui/button'
 import { useLogout } from '@/hooks/use-logout'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -13,7 +14,10 @@ export default function DashboardPage() {
 
   function onLogout() {
     logout.mutate(undefined, {
-      onSuccess: () => router.push('/login'),
+      onSuccess: () => {
+        toast.success('Logged out')
+        router.push('/login')
+      },
     })
   }
 
