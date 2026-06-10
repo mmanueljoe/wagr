@@ -1,5 +1,6 @@
 import type { AuthUser, FundingModel, LoginEmployerInput, RegisterEmployerInput } from '@wagr/types'
 import { AppError } from '../errors/app-error'
+import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { type SessionData, createSession } from '../lib/session'
 import { createSupabaseAuthClient, supabase } from '../lib/supabase'
@@ -67,6 +68,13 @@ export async function registerEmployer(input: RegisterEmployerInput): Promise<Au
     email: user.email,
   })
 
+  await audit({
+    action: 'employer_register',
+    actor: 'employer',
+    employerId: user.employer_id,
+    metadata: { industry, pay_date },
+  })
+
   return { user, sessionId }
 }
 
@@ -105,6 +113,12 @@ export async function loginEmployer(input: LoginEmployerInput): Promise<AuthResu
     user_id: user.id,
     employer_id: user.employer_id,
     email: user.email,
+  })
+
+  await audit({
+    action: 'employer_login',
+    actor: 'employer',
+    employerId: user.employer_id,
   })
 
   return { user, sessionId }
