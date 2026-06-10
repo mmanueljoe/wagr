@@ -202,6 +202,118 @@ not blog posts.
 
 ---
 
+
+
+## Engineering practices for production-grade code
+
+These rules exist so the codebase stays clean as it grows from 5 endpoints
+to 50. Each rule says **what** and **why**. Where a pattern has a name, the
+name carries shared understanding across the industry — use it.
+
+### Architecture: layered, not MVC
+
+MVC was designed for desktop GUIs (1970s) and server-rendered apps. Our api
+returns JSON; the web renders it. The modern equivalent is layered
+architecture (see ADR 011):
+
+
+Why each layer matters:
+- **Controllers can't be unit-tested without Express.** Push logic to services.
+- **Services can be unit-tested without anything.** Plain inputs in, plain
+  outputs out, throw on failure.
+- **Lib/client modules are the only files that touch external systems.**
+  Mock once at this boundary; nothing else needs mocking.
+
+### Single Responsibility (SRP)
+- One file = one thing. `auth-service.ts` handles auth. It does not also
+  handle employees.
+- One function = one decision. If a function does X and "maybe also Y based
+  on a flag," split it.
+- One service per resource: `auth-service`, `employee-service`,
+  `advance-service`, `wage-engine`.
+
+### Error handling: throw, don't return
+- Define `class AppError extends Error { code, status, message }` once in
+  `apps/api/src/errors/app-error.ts`.
+- Services **throw** `AppError` on failure. They never return
+  `{ ok, error }` shapes.
+- One global error handler in `middleware/error-handler.ts` catches
+  everything that bubbles and formats it as `{ error: { code, message } }`.
+- Controllers never call `res.status(500).json(...)` inline. Throw or
+  propagate.
+- Express 5 catches rejected promises natively — **no asyncHandler wrapper
+  needed.** Don't add one.
+
+### Validation: at every boundary
+- Outside → in: Zod schema validates the request body before the controller
+  sees it (`validateBody` middleware).
+- Service inputs: accept a Zod-typed input if called from multiple places.
+- External responses: validate Moolre and Supabase response shapes when
+  they cross a boundary you don't control.
+
+### Composition over inheritance
+- Prefer functions over classes when both work. `AppError` is the only
+  class in the api. Everything else is functions.
+- Don't build a `BaseService` until you have 3 services that genuinely
+  share behaviour. Premature abstraction is worse than duplication.
+
+### Dependency boundaries
+- Direction of imports: **route → controller → service → lib**. Never the
+  reverse. Never controller → controller. Never service → controller.
+- Services import the singleton (logger, supabase, redis) from `lib/`. If
+  a test needs to swap a dependency, refactor the service to take it as a
+  parameter at that point.
+- No service file imports `express`. If you have to, you're in the wrong
+  layer.
+
+### Testing strategy
+- **Pure logic (services, wage-engine):** unit tests. Vitest. Fast. Run on
+  every commit.
+- **Routes:** integration tests against a real test database. Slower. CI
+  only, not pre-commit.
+- **Don't mock what you own.** If a test is mostly `vi.mock('./supabase')`,
+  the test proves nothing.
+- Tests live next to the file they test: `earned-wage.ts` +
+  `earned-wage.test.ts`.
+
+### File and naming conventions
+- Files: `kebab-case.ts`.
+- Types and interfaces: `PascalCase`.
+- Functions and variables: `camelCase`.
+- Constants: `SCREAMING_SNAKE_CASE` for true module-level constants;
+  `camelCase` otherwise.
+- Exported names match their file's purpose.
+- **Default exports forbidden** except in Next.js page/layout/route files
+  where the framework requires them.
+
+### Web-side practices
+- **Components are pure renderers.** State and data live in hooks.
+- **One component per file.** File name = component name in kebab-case.
+- **Server Components for the initial fetch.** Client Components only when
+  interactivity is needed.
+- **All client-side data calls go through TanStack Query** — queries and
+  mutations alike. No raw `fetch` in components or hooks. See ADR 012.
+- **The web speaks to the Wagr api only.** No direct Supabase / Moolre /
+  third-party calls from the browser (see ADR 007).
+- **Tailwind utilities for styling.** Brand tokens via `@theme` in
+  `globals.css`. shadcn primitives for inputs, dialogs, selects, buttons.
+
+### Anti-patterns (don't)
+- **Premature abstraction.** No `BaseService`, no `EntityManager`, no
+  `Repository<T>` until pain is real and recurring (3+ duplications).
+- **God files.** When a route file passes 300 lines, split by behaviour
+  (`employees/add.controller.ts`, `employees/list.controller.ts`), not by
+  line count.
+- **Magic numbers.** Name your constants.
+- **Returning errors from services.** Throw `AppError`.
+- **Mocking everything.** Mock at the external boundary, not in the middle
+  of your own code.
+- **`any` and `as unknown as`.** More code (Zod, narrowing), not a cast.
+- **`console.log`.** Use the logger.
+- **Inline string keys** for Redis, env vars, or audit-log actions.
+  Constants in one place per resource.
+- **Async wrappers in Express 5.** Cargo-culted from Express 4.
+
 ## Standards (not negotiable)
 
 These are widely-accepted production-grade rules. Follow them.

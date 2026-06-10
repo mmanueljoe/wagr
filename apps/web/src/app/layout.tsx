@@ -1,3 +1,4 @@
+import { QueryProvider } from '@/components/shared/query-provider'
 import type { Metadata } from 'next'
 import { Inter, Space_Grotesk } from 'next/font/google'
 import './globals.css'
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-body bg-wagr-white text-wagr-black">
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   )

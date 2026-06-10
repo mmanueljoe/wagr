@@ -60,3 +60,5 @@ What else we looked at and why we passed.
 | [008](008-money-as-integer-minor-units.md) | Money as integer minor-units (pesewas) |
 | [009](009-idempotency-on-money-operations.md) | Idempotency keys on every money-moving request |
 | [010](010-audit-log-mandatory.md) | Append-only audit log on every state change |
+| [011](011-layered-architecture-not-mvc.md) | Layered architecture, not MVC |
+| [012](012-tanstack-query-for-client-data.md) | TanStack Query for client-side data fetching |
