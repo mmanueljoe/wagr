@@ -1,4 +1,4 @@
-import type { CreateEmployeeInput, Employee, EmployeeNetwork, MoneyPesewas } from '@wagr/types'
+import type { CreateEmployeeInput, Employee, EmployeeNetwork } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -55,6 +55,42 @@ export async function createEmployee(
   return rowToEmployee(data)
 }
 
+export async function setEmployeeActive(
+  employerId: string,
+  employeeId: string,
+  isActive: boolean,
+): Promise<Employee> {
+  const { data, error } = await supabase
+    .from('employees')
+    .update({ is_active: isActive })
+    .eq('id', employeeId)
+    .eq('employer_id', employerId)
+    .select(
+      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, created_at',
+    )
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, employerId, employeeId }, 'failed to update employee status')
+    throw new AppError('EMPLOYEE_UPDATE_FAILED', 500, 'Could not update worker')
+  }
+
+  // No row matched — either the id is wrong or it belongs to another employer.
+  // Same response either way so we don't leak which one.
+  if (!data) {
+    throw new AppError('EMPLOYEE_NOT_FOUND', 404, 'Worker not found')
+  }
+
+  await audit({
+    action: isActive ? 'employee_reactivated' : 'employee_deactivated',
+    actor: 'employer',
+    employerId,
+    employeeId: data.id,
+  })
+
+  return rowToEmployee(data)
+}
+
 export async function listEmployees(employerId: string): Promise<Employee[]> {
   const { data, error } = await supabase
     .from('employees')
@@ -92,7 +128,7 @@ function rowToEmployee(row: EmployeeRow): Employee {
     network: row.network as EmployeeNetwork,
     // Round defensively: 3000 * 100 should be 300000 exactly, but with float
     // arithmetic on arbitrary numeric values we want to defend against drift.
-    monthly_salary_pesewas: Math.round(row.monthly_salary * PESEWAS_PER_CEDI) as MoneyPesewas,
+    monthly_salary_pesewas: Math.round(row.monthly_salary * PESEWAS_PER_CEDI),
     start_date: row.start_date,
     is_active: row.is_active,
     credit_flag: row.credit_flag,
