@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { AppError } from '../errors/app-error'
-import { createEmployee, listEmployees } from '../services/employee-service'
+import { createEmployee, listEmployees, setEmployeeActive } from '../services/employee-service'
 
 export async function createEmployeeHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
@@ -12,4 +12,12 @@ export async function listEmployeesHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
   const employees = await listEmployees(req.user.employer_id)
   res.json(employees)
+}
+
+export async function setEmployeeActiveHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
+  const id = req.params.id
+  if (typeof id !== 'string') throw new AppError('INVALID_ID', 400, 'Invalid worker id')
+  const employee = await setEmployeeActive(req.user.employer_id, id, req.body.is_active)
+  res.json(employee)
 }

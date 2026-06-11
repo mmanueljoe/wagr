@@ -23,6 +23,12 @@ export const createEmployeeSchema = z.object({
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>
 
+export const setEmployeeActiveSchema = z.object({
+  is_active: z.boolean(),
+})
+
+export type SetEmployeeActiveInput = z.infer<typeof setEmployeeActiveSchema>
+
 // Public shape returned from /employees endpoints. All money in pesewas.
 export interface Employee {
   id: string
