@@ -1,17 +1,16 @@
+import type { UssdSession } from '@wagr/types'
 import { redis } from './redis'
 
-// Stub. The real session shape and flow lands with [ussd-session-handler].
-// Kept here so the Redis wiring has at least one named caller and the
-// key-naming convention is set early.
-
+// TTL matches the spec — Moolre USSD sessions die after 120s of inactivity,
+// so the Redis key gracefully expires alongside the carrier's session.
 const SESSION_TTL_SECONDS = 120
 const keyFor = (sessionId: string) => `ussd:session:${sessionId}`
 
-export async function getSession<T>(sessionId: string): Promise<T | null> {
-  return (await redis.get<T>(keyFor(sessionId))) ?? null
+export async function getSession(sessionId: string): Promise<UssdSession | null> {
+  return (await redis.get<UssdSession>(keyFor(sessionId))) ?? null
 }
 
-export async function setSession<T>(sessionId: string, value: T): Promise<void> {
+export async function setSession(sessionId: string, value: UssdSession): Promise<void> {
   await redis.set(keyFor(sessionId), value, { ex: SESSION_TTL_SECONDS })
 }
 

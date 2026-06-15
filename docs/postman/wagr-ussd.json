@@ -1,0 +1,131 @@
+{
+  "info": {
+    "name": "Wagr USSD (simulated Moolre callbacks)",
+    "description": "Simulated Moolre USSD callbacks against the local Wagr api. While we don't have a paid Moolre USSD short code + ngrok, this collection replaces the real carrier callback so we can exercise /ussd end-to-end. Import this file via Postman → Import → File.\n\n## Variables\n- `api_url` — base URL of the running Wagr api. Default `http://localhost:3001`.\n- `session_id` — Moolre session id. Reuse the same value across a flow to simulate the same dial.\n\n## How to drive a flow\n1. Run **USSD — new session (welcome menu)** → expect `reply: true` and the welcome menu.\n2. Run **USSD — press 1 (balance, terminal)** with the SAME `session_id` → expect `reply: false` and the balance stub.\n3. The session is now cleared. Running step 2 again with the same `session_id` should re-show the welcome menu (treated as fresh).\n\nSee docs/architecture/moolre-api-reference.md for the canonical callback shape.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "api_url",
+      "value": "http://localhost:3001",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "3-17074657982460137",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "USSD — new session (welcome menu)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": true,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "First hit of a session. `new: true` means Moolre opened the session. Expect the welcome menu with `reply: true`."
+      }
+    },
+    {
+      "name": "USSD — press 1 (balance, terminal)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"1\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Follow-up: worker pressed 1. Slice 2 returns the balance stub with `reply: false` and clears the Redis session."
+      }
+    },
+    {
+      "name": "USSD — press 2 (advance, terminal)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"2\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Follow-up: worker pressed 2. Slice 2 returns the advance stub with `reply: false` and clears the Redis session."
+      }
+    },
+    {
+      "name": "USSD — invalid input (re-prompt)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"9\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Worker typed something other than 1 or 2. Expect the welcome menu prefixed with 'Invalid choice.' and `reply: true` (session stays open)."
+      }
+    },
+    {
+      "name": "USSD — malformed body (validation)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": true\n}"
+        },
+        "description": "Sanity check on the Zod validator. Expect 400 with `{ error: { code: 'INVALID_BODY', message: 'msisdn: Required' } }`."
+      }
+    }
+  ]
+}
