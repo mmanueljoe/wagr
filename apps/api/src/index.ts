@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth'
 import { employeesRouter } from './routes/employees'
 import { employerRouter } from './routes/employer'
 import { healthRouter } from './routes/health'
+import { ussdRouter } from './routes/ussd'
 
 const app = express()
 
@@ -21,6 +22,7 @@ app.use(healthRouter)
 app.use(authRouter)
 app.use(employerRouter)
 app.use(employeesRouter)
+app.use(ussdRouter)
 
 app.use(errorHandler)
 
