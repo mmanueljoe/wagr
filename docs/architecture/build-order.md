@@ -65,10 +65,9 @@ Build nothing until all of these are done. Everything depends on them.
 | 3 | [fee-calc] | USSD confirmation screen |
 | 4 | [employer-register] | Employee management |
 | 5 | [employer-login] | Dashboard access |
-| 6 | [funding-model-select] | Float funding |
-| 7 | [csv-employee-upload] | Bulk worker onboarding |
-| 8 | [single-employee-add] | Individual onboarding |
-| 9 | [employee-deactivate] | Access control |
+| 6 | [csv-employee-upload] | Bulk worker onboarding |
+| 7 | [single-employee-add] | Individual onboarding |
+| 8 | [employee-deactivate] | Access control |
 
 **Why this order:** Wage engine first because it has no dependencies and is needed by USSD. Auth before employee management because employee routes are protected. Bulk upload before single add because bulk is higher value.
 

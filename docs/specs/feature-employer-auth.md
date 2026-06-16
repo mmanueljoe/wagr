@@ -89,7 +89,6 @@ await supabase.from('employers').insert({
   industry: formData.industry,
   pay_date: formData.pay_date,
   float_balance: 0,
-  funding_model: 'model1'  // Default, changed during onboarding
 })
 ```
 

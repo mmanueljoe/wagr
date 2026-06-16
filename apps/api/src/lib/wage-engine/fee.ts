@@ -1,18 +1,19 @@
 import type { MoneyPesewas } from '@wagr/types'
 
-const FEE_RATE = 0.03
-const PESEWAS_PER_CEDI = 100
+// Flat GHS 10 fee per advance (1000 pesewas, see ADR 008). The per-advance
+// fee is the same regardless of amount; the worker receives requested - 10.
+// The 20%-of-request ceiling that protects small advances is enforced as a
+// minimum-advance check in the USSD amount step (GHS 50), not here.
+const FLAT_FEE_PESEWAS: MoneyPesewas = 1_000
 
 export interface FeeBreakdown {
   fee: MoneyPesewas
   net: MoneyPesewas
 }
 
-// Round the fee UP to the nearest cedi so partial cedis go to Wagr, not the
-// worker. Net is what actually gets disbursed to the MoMo wallet.
-// All values in integer pesewas (GHS 1.00 = 100). See ADR 008.
 export function calculateFee(requestedAmountPesewas: MoneyPesewas): FeeBreakdown {
-  const feeCedis = Math.ceil((requestedAmountPesewas * FEE_RATE) / PESEWAS_PER_CEDI)
-  const fee = feeCedis * PESEWAS_PER_CEDI
-  return { fee, net: requestedAmountPesewas - fee }
+  return {
+    fee: FLAT_FEE_PESEWAS,
+    net: requestedAmountPesewas - FLAT_FEE_PESEWAS,
+  }
 }

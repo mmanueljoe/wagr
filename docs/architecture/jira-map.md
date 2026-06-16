@@ -28,7 +28,6 @@ When Jira renumbers a story (delete + recreate, project reset, etc.), only the *
 | csv-employee-upload | Bulk employee upload via CSV | |
 | single-employee-add | Add individual employee | |
 | employee-deactivate | Deactivate employee | |
-| funding-model-select | Funding model (Model 1 / Model 2) selection | |
 
 ## Wage Engine (Epic: Wage Calculation Engine)
 
@@ -36,7 +35,7 @@ When Jira renumbers a story (delete + recreate, project reset, etc.), only the *
 |---|---|---|
 | earned-wage-calc | Earned wage calculation | |
 | max-advance-calc | Max advance (50% cap) calculation | |
-| fee-calc | Service fee (3%) calculation | |
+| fee-calc | Service fee (flat GHS 10) calculation | |
 
 ## USSD Worker Flow (Epic: USSD Worker Flow)
 

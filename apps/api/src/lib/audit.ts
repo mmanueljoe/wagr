@@ -12,7 +12,6 @@ export const AUDIT_ACTIONS = [
   'employer_register',
   'employer_login',
   'employer_logout',
-  'employer_funding_model_set',
   'employee_added',
   'employee_deactivated',
   'employee_reactivated',

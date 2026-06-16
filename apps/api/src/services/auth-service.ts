@@ -1,4 +1,4 @@
-import type { AuthUser, FundingModel, LoginEmployerInput, RegisterEmployerInput } from '@wagr/types'
+import type { AuthUser, LoginEmployerInput, RegisterEmployerInput } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -8,8 +8,7 @@ import { createSupabaseAuthClient, supabase } from '../lib/supabase'
 // Pure business logic for employer auth. Throws AppError on every failure;
 // returns plain data on success. Knows nothing about Express — the controller
 // owns req/res, this owns the rules. Same AuthUser shape returned by
-// register, login, and getMe — frontend learns it once. funding_model is
-// null until the employer picks one at onboarding.
+// register, login, and getMe — frontend learns it once.
 
 interface AuthResult {
   user: AuthUser
@@ -35,9 +34,8 @@ export async function registerEmployer(input: RegisterEmployerInput): Promise<Au
     throw new AppError('AUTH_CREATE_FAILED', 500, 'Could not create account')
   }
 
-  // Same UUID as the auth user. funding_model is left NULL — the employer
-  // picks it at /onboarding/funding-model. If the insert fails we delete
-  // the auth user so we don't leave orphans.
+  // Same UUID as the auth user. If the insert fails we delete the auth user
+  // so we don't leave orphans.
   const { error: insertError } = await supabase.from('employers').insert({
     id: data.user.id,
     company_name,
@@ -60,7 +58,6 @@ export async function registerEmployer(input: RegisterEmployerInput): Promise<Au
     id: data.user.id,
     employer_id: data.user.id,
     email,
-    funding_model: null,
   }
   const sessionId = await createSession({
     user_id: user.id,
@@ -94,7 +91,7 @@ export async function loginEmployer(input: LoginEmployerInput): Promise<AuthResu
 
   const { data: employer } = await supabase
     .from('employers')
-    .select('id, email, funding_model')
+    .select('id, email')
     .eq('id', data.user.id)
     .maybeSingle()
 
@@ -107,7 +104,6 @@ export async function loginEmployer(input: LoginEmployerInput): Promise<AuthResu
     id: data.user.id,
     employer_id: employer.id,
     email: employer.email,
-    funding_model: (employer.funding_model as FundingModel) ?? null,
   }
   const sessionId = await createSession({
     user_id: user.id,
@@ -124,20 +120,13 @@ export async function loginEmployer(input: LoginEmployerInput): Promise<AuthResu
   return { user, sessionId }
 }
 
-// getMe re-reads funding_model from the DB so the response always reflects
-// the latest onboarding state. Session stores identity only; mutable state
-// stays in Postgres — single source of truth.
+// getMe echoes session identity. There's no mutable per-employer state left
+// for it to re-read from the DB now that funding_model is gone — if more
+// per-employer state lands, restore the SELECT here.
 export async function getMe(session: SessionData): Promise<AuthUser> {
-  const { data: employer } = await supabase
-    .from('employers')
-    .select('funding_model')
-    .eq('id', session.employer_id)
-    .maybeSingle()
-
   return {
     id: session.user_id,
     employer_id: session.employer_id,
     email: session.email,
-    funding_model: (employer?.funding_model as FundingModel) ?? null,
   }
 }
