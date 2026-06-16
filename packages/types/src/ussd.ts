@@ -21,13 +21,19 @@ export interface UssdResponse {
   reply: boolean
 }
 
-// Redis-backed session state. Slice 2 carries the bare minimum (step +
-// started_at). Later USSD slices grow this with employee_id, employer_id,
-// earned_wage, max_advance, requested_amount, pin_attempts, etc. — see
-// docs/specs/feature-ussd-flow.md (Session State Structure).
+// Redis-backed session state. Grows with each USSD slice — see
+// docs/specs/feature-ussd-flow.md (Session State Structure). employer_id,
+// earned_wage, max_advance, requested_amount, pin_attempts arrive with
+// later step stories.
 export interface UssdSession {
   step: UssdStep
   started_at: string
+  employee_id: string
+  is_first_use: boolean
+  // Transient — only set between pin_setup_new and pin_setup_confirm steps
+  // while the worker enters and re-enters their new PIN. Cleared once the
+  // PIN is hashed and persisted to the employee row.
+  new_pin?: string
 }
 
-export type UssdStep = 'welcome' | 'balance' | 'advance'
+export type UssdStep = 'welcome' | 'balance' | 'advance' | 'pin_setup_new' | 'pin_setup_confirm'

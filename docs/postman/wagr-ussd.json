@@ -106,6 +106,72 @@
       }
     },
     {
+      "name": "USSD — PIN setup, enter new PIN",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"1234\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Step 1 of first-use PIN setup. Run after a new session against an employee with ussd_pin_hash=null. Expect 'Re-enter your PIN to confirm:' with `reply: true`."
+      }
+    },
+    {
+      "name": "USSD — PIN setup, confirm mismatch",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"5678\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Confirm step with a different PIN than was entered in step 1. Expect 'PINs did not match.' and a re-prompt back to step 1, `reply: true`."
+      }
+    },
+    {
+      "name": "USSD — PIN setup, confirm match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{api_url}}/ussd",
+          "host": ["{{api_url}}"],
+          "path": ["ussd"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"new\": false,\n  \"msisdn\": \"233241235993\",\n  \"network\": 3,\n  \"message\": \"1234\",\n  \"extension\": \"109\",\n  \"data\": \"\"\n}"
+        },
+        "description": "Confirm step with the same PIN entered in step 1. Expect 'PIN set. Dial again to check your balance.' with `reply: false`. Side effect: bcrypt hash written to employees.ussd_pin_hash."
+      }
+    },
+    {
       "name": "USSD — malformed body (validation)",
       "request": {
         "method": "POST",
