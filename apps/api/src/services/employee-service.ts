@@ -91,6 +91,52 @@ export async function setEmployeeActive(
   return rowToEmployee(data)
 }
 
+// Minimal employee shape needed by the USSD flow. Kept separate from the
+// public `Employee` type because `ussd_pin_hash` must never cross the
+// network — it's hash material that only the api ever reads.
+export interface EmployeeForUssd {
+  id: string
+  employer_id: string
+  full_name: string
+  is_active: boolean
+  ussd_pin_hash: string | null
+}
+
+export async function findEmployeeByMomoNumber(
+  momoNumber: string,
+): Promise<EmployeeForUssd | null> {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('id, employer_id, full_name, is_active, ussd_pin_hash')
+    .eq('momo_number', momoNumber)
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error }, 'failed to look up employee by momo number')
+    throw new AppError('EMPLOYEE_LOOKUP_FAILED', 500, 'Could not look up worker')
+  }
+
+  return data
+}
+
+export async function setEmployeePinHash(employeeId: string, pinHash: string): Promise<void> {
+  const { error } = await supabase
+    .from('employees')
+    .update({ ussd_pin_hash: pinHash })
+    .eq('id', employeeId)
+
+  if (error) {
+    logger.error({ err: error, employeeId }, 'failed to save ussd pin hash')
+    throw new AppError('PIN_SAVE_FAILED', 500, 'Could not save PIN')
+  }
+
+  await audit({
+    action: 'employee_pin_set',
+    actor: 'worker',
+    employeeId,
+  })
+}
+
 export async function listEmployees(employerId: string): Promise<Employee[]> {
   const { data, error } = await supabase
     .from('employees')

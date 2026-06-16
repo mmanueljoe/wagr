@@ -17,6 +17,7 @@
     "@t3-oss/env-core": "^0.13.0",
     "@upstash/redis": "^1.38.0",
     "@wagr/types": "workspace:*",
+    "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.1.0",
@@ -24,6 +25,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.0",
