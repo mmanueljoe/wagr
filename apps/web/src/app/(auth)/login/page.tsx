@@ -37,12 +37,9 @@ export default function LoginPage() {
 
   function onSubmit(values: LoginInput) {
     login.mutate(values, {
-      // If the employer hasn't completed onboarding yet, drop them at the
-      // funding-model step instead of the dashboard. Middleware would catch
-      // it too, but doing it here avoids a flash of the redirect.
-      onSuccess: (user) => {
+      onSuccess: () => {
         toast.success('Welcome back')
-        router.push(user.funding_model ? '/dashboard' : '/onboarding/funding-model')
+        router.push('/dashboard')
       },
     })
   }

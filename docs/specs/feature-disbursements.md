@@ -39,14 +39,17 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 - [ ] advance_request stays in status: pending until Transfer Status confirms terminal state
 - [ ] Transfer Status (POST /open/transact/status) polled by externalref every 5 seconds, up to 24 attempts (2 minutes total)
 - [ ] On txstatus = 1 (Successful): advance_request → status: disbursed
-- [ ] On txstatus = 2 (Failed): advance_request → status: failed, employer notified via SMS, float_balance refunded if it was debited
+- [ ] On txstatus = 2 (Failed): advance_request → status: failed, employer notified via SMS, float_balance refunded
 - [ ] On txstatus = 0 (Pending) or 3 (Unknown): keep polling — **never assume failure on these values** per Moolre's explicit warning
 - [ ] If still non-terminal after 24 polls, alert the team but leave the advance_request in pending (do not mark failed)
-- [ ] employer float_balance decremented by net_disbursed amount when status becomes disbursed (Model 1 only)
+- [ ] employer float_balance decremented by net_disbursed amount when status becomes disbursed
 - [ ] All state transitions written to audit_log
 
 ### Float Funding ([float-funding])
-- [ ] Fund Float button visible in Settings for Model 1 employers
+- [ ] Every employer pre-funds a float before workers can request advances —
+      no advance can be disbursed against a zero float
+- [ ] Fund Float button visible in Settings (and prompted right after
+      registration for first-time employers with `float_balance = 0`)
 - [ ] Employer enters an amount and confirms
 - [ ] Moolre Payments API called (POST /open/transact/payment) with: type=1, channel (network code), currency=GHS, payer (employer's MoMo), amount, externalref (`wagr-float-{employer_id}-{timestamp}`), accountnumber
 - [ ] Employer receives a USSD payment prompt on their phone and enters their MoMo PIN to authorise
@@ -61,7 +64,7 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 - [ ] If the employer authorises the recovery from within the dashboard via the same USSD session that prompted the action, pass the USSD `sessionid` in the Payments call to skip the OTP step. This avoids a double-PIN UX.
 - [ ] When Moolre webhook fires with txstatus = 1: all included advance_request records updated to status: repaid, repayment record created
 - [ ] When Moolre webhook fires with txstatus = 2: employer notified, payroll run blocked until resolved — partial recovery not allowed
-- [ ] float_balance replenished by recovered amount (Model 1 only)
+- [ ] float_balance replenished by recovered amount
 - [ ] WhatsApp payslips triggered after successful recovery ([whatsapp-worker-payslip])
 - [ ] All events written to audit_log
 
@@ -190,7 +193,7 @@ The database stores the canonical `Network` value (`'mtn' | 'telecel' | 'at'`) o
 | Story | Depends On |
 |---|---|
 | [moolre-disbursement] | [moolre-sandbox-tested] (Moolre sandbox tested), [ussd-pin-step] (PIN confirmation), [db-schema] (database) |
-| [float-funding] | [moolre-sandbox-tested], [employer-register] (employer auth), [funding-model-select] (funding model) |
+| [float-funding] | [moolre-sandbox-tested], [employer-register] (employer auth) |
 | [payday-recovery] | [moolre-disbursement] (advances exist to recover), [float-funding] (float funded) |
 
 ---

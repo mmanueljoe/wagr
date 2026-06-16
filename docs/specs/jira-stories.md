@@ -133,14 +133,6 @@ Stories covering employer registration, authentication, and employee management.
 
 ---
 
-**[funding-model-select]** — As an employer, I want to select my funding model during onboarding so that Wagr knows whether to use my float or front advances from its own capital.
-
-- Acceptance criteria: Onboarding step presents Model 1 and Model 2 with plain-English descriptions. Selection is saved to the employer record. Model 1 employers are prompted to fund their float before the dashboard activates.
-- Sprint: Week 2
-- Story points: 2
-
----
-
 ## WAGR-E3: Wage Calculation Engine
 
 Stories covering earned wage calculation logic.
@@ -165,7 +157,7 @@ Stories covering earned wage calculation logic.
 
 **[fee-calc]** — As the system, I want to calculate the service fee for an advance so that the net disbursement amount is accurate.
 
-- Acceptance criteria: Fee = 3% of requested amount, rounded up to the nearest GHS. Net disbursement = requested amount minus fee. Fee amount and net disbursement are both stored on the advance_request record.
+- Acceptance criteria: Fee = flat GHS 10 per advance, regardless of requested amount. Net disbursement = requested amount minus GHS 10. Fee amount and net disbursement are both stored on the advance_request record. The minimum advance amount (enforced in [ussd-amount-step]) is GHS 50, which caps the effective fee at 20% of any advance.
 - Sprint: Week 2
 - Story points: 1
 
@@ -197,7 +189,7 @@ Stories covering the USSD interface workers use to request advances.
 
 **[ussd-amount-step]** — As a worker, I want to request an advance amount via USSD so that I can specify exactly how much I need.
 
-- Acceptance criteria: Step 3 prompts for the amount. Amount is validated against the maximum advance. Amount below GHS 10 is rejected with a message. Amount above maximum is rejected with the maximum amount shown. Valid amount proceeds to confirmation step.
+- Acceptance criteria: Step 3 prompts for the amount. Amount is validated against the maximum advance. Amount below GHS 50 is rejected with a message (the floor exists so the flat GHS 10 fee never exceeds 20% of what the worker requested). Amount above maximum is rejected with the maximum amount shown. Valid amount proceeds to confirmation step.
 - Sprint: Week 3
 - Story points: 2
 - Depends on: [ussd-balance-step]
@@ -248,7 +240,7 @@ Stories covering money movement via Moolre APIs.
 
 **[float-funding]** — As an employer, I want to fund my float via Moolre's Payments API so that advances can be disbursed from my account.
 
-- Acceptance criteria: Dashboard shows a Fund Float button for Model 1 employers. Clicking it initiates a Moolre Payments request for the employer's specified amount. The employer receives a MoMo PIN prompt on their phone. On payment confirmation via Moolre webhook (`txstatus = 1`), the employer's float_balance is updated in the database. Employer receives an SMS confirmation via [sms-advance-status]. The webhook handler verifies the `secret` field in the payload matches our account secret.
+- Acceptance criteria: Every employer pre-funds a float before workers can request advances. Dashboard shows a Fund Float button (prompted right after registration when `float_balance = 0`, and always available in Settings). Clicking it initiates a Moolre Payments request for the employer's specified amount. The employer receives a MoMo PIN prompt on their phone. On payment confirmation via Moolre webhook (`txstatus = 1`), the employer's float_balance is updated in the database. Employer receives an SMS confirmation via [sms-advance-status]. The webhook handler verifies the `secret` field in the payload matches our account secret.
 - Sprint: Week 4
 - Story points: 4
 - Depends on: [moolre-sandbox-tested], [employer-register]

@@ -1,7 +1,7 @@
 # Spec: Employee Management
 
 **Epic:** WAGR-E2 Employer Onboarding
-**Stories:** [csv-employee-upload], [single-employee-add], [employee-deactivate], [funding-model-select]
+**Stories:** [csv-employee-upload], [single-employee-add], [employee-deactivate]
 **Sprint:** Week 2
 **Status:** Not started
 
@@ -9,7 +9,7 @@
 
 ## Overview
 
-After an employer registers, they onboard their workforce. Employees can be added in bulk via CSV upload or individually via a form. Employees can be deactivated when they leave the company. The employer also selects their funding model during onboarding, which determines how advances are financed.
+After an employer registers, they onboard their workforce. Employees can be added in bulk via CSV upload or individually via a form. Employees can be deactivated when they leave the company. Every employer pre-funds a float before advances can be requested — see [float-funding].
 
 ---
 
@@ -20,8 +20,6 @@ After an employer registers, they onboard their workforce. Employees can be adde
 **[single-employee-add]** — As an employer, I want to add a single employee manually so that I can onboard new hires without re-uploading the full list.
 
 **[employee-deactivate]** — As an employer, I want to deactivate an employee so that former staff cannot request advances.
-
-**[funding-model-select]** — As an employer, I want to select my funding model during onboarding so that Wagr knows how to finance advances.
 
 ---
 
@@ -55,15 +53,6 @@ After an employer registers, they onboard their workforce. Employees can be adde
 - [ ] Deactivated employees are shown in the list with a Deactivated badge — they are not deleted
 - [ ] Action written to audit_log with actor: employer
 - [ ] Reactivation button available on deactivated employees
-
-### Funding Model Selection ([funding-model-select])
-- [ ] Shown as a step in the post-registration onboarding flow
-- [ ] Two options presented with plain-English descriptions:
-  - Model 1: "I will deposit funds upfront. Advances are paid from my float."
-  - Model 2: "Wagr fronts the advances. I repay on payday."
-- [ ] Selection saved to employer.funding_model
-- [ ] Model 1 employers are taken to the Float Funding step immediately after selection
-- [ ] Model 2 employers proceed directly to the dashboard
 
 ---
 

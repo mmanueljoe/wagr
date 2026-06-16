@@ -31,7 +31,7 @@ The employer dashboard is the primary web interface for Wagr. Employers use it t
 
 ### Dashboard Home ([dashboard-home])
 - [ ] Four stat cards: Float Balance, Advances This Period, Pending Requests, Repayment Rate
-- [ ] Float balance shows current amount with a Fund Float button for Model 1 employers
+- [ ] Float balance shows current amount with a Fund Float button
 - [ ] Recent advance requests table shows last 10 requests with employee name, amount, status, and time
 - [ ] Status badges use the correct colours (see design system)
 - [ ] Data refreshes on page load
@@ -169,8 +169,7 @@ Payroll processing is a long-running operation. It must not block the UI. The fr
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
-Float Balance card shows the Fund Float button only for Model 1 employers.
-Repayment Rate shows the percentage of advances that were successfully repaid.
+Float Balance card shows the Fund Float button. Repayment Rate shows the percentage of advances that were successfully repaid.
 
 ### Empty States
 

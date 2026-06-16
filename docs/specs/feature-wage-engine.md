@@ -41,10 +41,18 @@ The wage calculation engine is the core business logic of Wagr. It determines ho
 - [ ] Returns 0 if employee is_active is false
 
 ### Service Fee Calculation ([fee-calc])
-- [ ] Fee = Math.ceil(requested_amount x 0.03)
-- [ ] Net disbursement = requested_amount - fee
+- [ ] Fee = flat GHS 10 per advance, regardless of requested amount
+- [ ] Net disbursement = requested_amount - GHS 10
 - [ ] Fee and net disbursement returned as separate values
-- [ ] Minimum fee is GHS 1
+
+### Minimum advance amount
+- [ ] Workers cannot request less than **GHS 50**
+- [ ] Rationale: the flat fee is GHS 10, so the effective fee rate must never
+      exceed 20% of what the worker requested. GHS 10 / GHS 50 = 20% — that's
+      the ceiling, so GHS 50 is the floor. Below GHS 50 the fee would eat too
+      much of a small advance and the deal stops being fair to the worker.
+- [ ] The minimum is enforced in [ussd-amount-step], not in `calculateFee` —
+      the fee function is pure arithmetic and trusts its input
 
 ---
 

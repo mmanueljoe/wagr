@@ -58,11 +58,9 @@ export default function RegisterPage() {
 
   function onSubmit(values: RegisterEmployerInput) {
     register.mutate(values, {
-      // Brand-new employer always lands at funding-model selection — they
-      // haven't picked one yet (funding_model is null fresh out of register).
       onSuccess: () => {
         toast.success('Account created')
-        router.push('/onboarding/funding-model')
+        router.push('/dashboard')
       },
     })
   }

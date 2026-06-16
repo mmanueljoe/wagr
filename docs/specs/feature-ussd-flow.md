@@ -66,7 +66,8 @@ END Thank you, goodbye.    ← session ends
 
 ### Amount Request ([ussd-amount-step])
 - [ ] Step 3: prompts for advance amount
-- [ ] Amount below GHS 10: CON with error, prompt again
+- [ ] Amount below GHS 50: CON with error, prompt again. (Floor exists so
+      the flat GHS 10 fee never exceeds 20% of what the worker requested.)
 - [ ] Amount above maximum: CON with error showing maximum, prompt again
 - [ ] Valid amount: store in session, proceed to confirmation
 
