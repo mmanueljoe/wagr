@@ -1,4 +1,4 @@
-import type { CreateEmployeeInput, Employee, EmployeeNetwork } from '@wagr/types'
+import type { CreateEmployeeInput, Employee, EmployeeNetwork, MoneyPesewas } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -94,12 +94,30 @@ export async function setEmployeeActive(
 // Minimal employee shape needed by the USSD flow. Kept separate from the
 // public `Employee` type because `ussd_pin_hash` must never cross the
 // network — it's hash material that only the api ever reads.
+//
+// monthly_salary_pesewas + start_date + employer_pay_date feed the wage
+// engine at session init. They live on the employee record (and the joined
+// employers row) but a single query saves a round trip.
 export interface EmployeeForUssd {
   id: string
   employer_id: string
   full_name: string
   is_active: boolean
   ussd_pin_hash: string | null
+  monthly_salary_pesewas: MoneyPesewas
+  start_date: string
+  employer_pay_date: number
+}
+
+interface EmployeeForUssdRow {
+  id: string
+  employer_id: string
+  full_name: string
+  is_active: boolean
+  ussd_pin_hash: string | null
+  monthly_salary: number
+  start_date: string
+  employers: { pay_date: number } | { pay_date: number }[] | null
 }
 
 export async function findEmployeeByMomoNumber(
@@ -107,16 +125,37 @@ export async function findEmployeeByMomoNumber(
 ): Promise<EmployeeForUssd | null> {
   const { data, error } = await supabase
     .from('employees')
-    .select('id, employer_id, full_name, is_active, ussd_pin_hash')
+    .select(
+      'id, employer_id, full_name, is_active, ussd_pin_hash, monthly_salary, start_date, employers!inner(pay_date)',
+    )
     .eq('momo_number', momoNumber)
-    .maybeSingle()
+    .maybeSingle<EmployeeForUssdRow>()
 
   if (error) {
     logger.error({ err: error }, 'failed to look up employee by momo number')
     throw new AppError('EMPLOYEE_LOOKUP_FAILED', 500, 'Could not look up worker')
   }
 
-  return data
+  return data ? rowToEmployeeForUssd(data) : null
+}
+
+function rowToEmployeeForUssd(row: EmployeeForUssdRow): EmployeeForUssd {
+  // Supabase types the nested employers relation as `T | T[] | null` even
+  // though `!inner` guarantees exactly one row. Narrow defensively.
+  const employer = Array.isArray(row.employers) ? row.employers[0] : row.employers
+  if (!employer) {
+    throw new AppError('EMPLOYER_NOT_FOUND', 500, 'Employer row missing for employee')
+  }
+  return {
+    id: row.id,
+    employer_id: row.employer_id,
+    full_name: row.full_name,
+    is_active: row.is_active,
+    ussd_pin_hash: row.ussd_pin_hash,
+    monthly_salary_pesewas: Math.round(row.monthly_salary * PESEWAS_PER_CEDI) as MoneyPesewas,
+    start_date: row.start_date,
+    employer_pay_date: employer.pay_date,
+  }
 }
 
 export async function setEmployeePinHash(employeeId: string, pinHash: string): Promise<void> {

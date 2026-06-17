@@ -1,17 +1,29 @@
-import type { UssdCallback, UssdResponse, UssdSession } from '@wagr/types'
+import {
+  type MoneyPesewas,
+  type UssdCallback,
+  type UssdResponse,
+  type UssdSession,
+  formatGhs,
+} from '@wagr/types'
 import type { EmployeeForUssd } from '../services/employee-service'
 
-// Pure step handler. The controller does the I/O (Redis read/write, employee
-// lookup, bcrypt + DB save for the PIN). This file just runs the state
-// machine.
+// Pure step handler. The controller does the I/O — Redis read/write,
+// employee lookup, wage pre-computation, bcrypt + DB save for the PIN.
+// This file just runs the state machine.
 //
-// On a new session the controller must hand us the resolved employee (or
-// null if no employee owns this msisdn). On a continuing session `employee`
-// is unused — the session already carries `employee_id`.
+// On a new session the controller must hand us a NewSessionContext with the
+// resolved employee + pre-computed wage values. Null context means no
+// employee owns this msisdn — we END "not registered".
 //
 // `sideEffect` lets the controller know when we need work done after the
-// session write: today that's only "save this PIN", but the pattern leaves
-// room for the disbursement trigger that lands in [ussd-pin-step].
+// session write: today that's only "save this PIN". Disbursement will use
+// the same pattern when [ussd-pin-step] lands.
+
+export interface NewSessionContext {
+  employee: EmployeeForUssd
+  earned_wage_pesewas: MoneyPesewas
+  max_advance_pesewas: MoneyPesewas
+}
 
 export type SideEffect = { type: 'save_pin'; employeeId: string; pin: string }
 
@@ -23,76 +35,62 @@ export interface FlowResult {
 
 const PIN_REGEX = /^\d{4}$/
 
-const WELCOME_MENU = 'Welcome to Wagr\n1) Check balance\n2) Request advance'
-const INVALID_MENU = `Invalid choice.\n${WELCOME_MENU}`
-const BALANCE_STUB = 'Balance check coming soon.'
-const ADVANCE_STUB = 'Advance request coming soon.'
-
 const NOT_REGISTERED = 'Number not registered on Wagr. Contact your employer.'
 const DEACTIVATED = 'Your access has been deactivated. Contact your employer.'
 const PIN_SETUP_PROMPT = 'Welcome to Wagr.\nPlease set a 4-digit PIN:'
 const PIN_CONFIRM_PROMPT = 'Re-enter your PIN to confirm:'
 const PIN_INVALID = 'PIN must be 4 digits. Try again:'
 const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
-const PIN_SET_DONE = 'PIN set. Dial again to check your balance.'
+const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
+const AMOUNT_STEP_STUB = 'Amount step coming soon.'
 const SESSION_ERROR = 'Session error. Please dial again.'
 
 export function handleCallback(
   callback: UssdCallback,
   currentSession: UssdSession | null,
-  employee: EmployeeForUssd | null,
+  context: NewSessionContext | null,
   now: Date,
 ): FlowResult {
   if (callback.new || !currentSession) {
-    return initSession(employee, now)
+    return initSession(context, now)
   }
 
   switch (currentSession.step) {
-    case 'welcome':
-      return handleWelcome(callback.message, currentSession)
     case 'pin_setup_new':
       return handlePinSetupNew(callback.message, currentSession)
     case 'pin_setup_confirm':
       return handlePinSetupConfirm(callback.message, currentSession)
+    case 'balance':
+      return handleBalance(callback.message, currentSession)
     default:
       return { response: end(SESSION_ERROR), nextSession: null }
   }
 }
 
-function initSession(employee: EmployeeForUssd | null, now: Date): FlowResult {
-  if (!employee) {
+function initSession(context: NewSessionContext | null, now: Date): FlowResult {
+  if (!context) {
     return { response: end(NOT_REGISTERED), nextSession: null }
   }
-  if (!employee.is_active) {
+  if (!context.employee.is_active) {
     return { response: end(DEACTIVATED), nextSession: null }
   }
 
   const base = {
     started_at: now.toISOString(),
-    employee_id: employee.id,
+    employee_id: context.employee.id,
+    full_name: context.employee.full_name,
+    earned_wage_pesewas: context.earned_wage_pesewas,
+    max_advance_pesewas: context.max_advance_pesewas,
   }
 
-  if (employee.ussd_pin_hash === null) {
+  if (context.employee.ussd_pin_hash === null) {
     return {
       response: reply(PIN_SETUP_PROMPT),
       nextSession: { ...base, step: 'pin_setup_new', is_first_use: true },
     }
   }
 
-  return {
-    response: reply(WELCOME_MENU),
-    nextSession: { ...base, step: 'welcome', is_first_use: false },
-  }
-}
-
-function handleWelcome(message: string, session: UssdSession): FlowResult {
-  if (message === '1') {
-    return { response: end(BALANCE_STUB), nextSession: null }
-  }
-  if (message === '2') {
-    return { response: end(ADVANCE_STUB), nextSession: null }
-  }
-  return { response: reply(INVALID_MENU), nextSession: session }
+  return enterBalance({ ...base, step: 'balance', is_first_use: false })
 }
 
 function handlePinSetupNew(message: string, session: UssdSession): FlowResult {
@@ -116,11 +114,45 @@ function handlePinSetupConfirm(message: string, session: UssdSession): FlowResul
       nextSession: { ...rest, step: 'pin_setup_new' },
     }
   }
+
+  // PIN matched — chain straight into the balance screen so the worker
+  // doesn't have to dial again. bcrypt + DB save runs as a side effect
+  // while the controller writes the session and sends the response.
+  const { new_pin: _drop, ...rest } = session
+  const balanceResult = enterBalance({ ...rest, step: 'balance' })
   return {
-    response: end(PIN_SET_DONE),
-    nextSession: null,
+    ...balanceResult,
     sideEffect: { type: 'save_pin', employeeId: session.employee_id, pin: message },
   }
+}
+
+function handleBalance(message: string, session: UssdSession): FlowResult {
+  if (message === '1') {
+    return { response: end(AMOUNT_STEP_STUB), nextSession: null }
+  }
+  // Anything else — show the balance again with the prompt. Keeps the
+  // session open so a fat-fingered keypress doesn't kill the flow.
+  return { response: reply(balanceScreen(session)), nextSession: session }
+}
+
+// Entry into the balance step — handles the "no cap available" END case
+// up front so we don't show "max GHS 0" and prompt for a keypress that
+// will only fail at the amount step. Used by both fresh-PIN-already-set
+// sessions and the pin-setup-completes-then-balance chain.
+function enterBalance(session: UssdSession): FlowResult {
+  if (session.max_advance_pesewas <= 0) {
+    return { response: end(NO_BALANCE_AVAILABLE), nextSession: null }
+  }
+  return { response: reply(balanceScreen(session)), nextSession: session }
+}
+
+function balanceScreen(session: UssdSession): string {
+  return [
+    `Hi ${session.full_name}.`,
+    `Earned: ${formatGhs(session.earned_wage_pesewas)}.`,
+    `Max advance: ${formatGhs(session.max_advance_pesewas)}.`,
+    'Press 1 to continue.',
+  ].join('\n')
 }
 
 function reply(message: string): UssdResponse {
