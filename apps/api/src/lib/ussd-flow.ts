@@ -10,16 +10,20 @@ import type { EmployeeForUssd } from '../services/employee-service'
 import { calculateFee } from './wage-engine/fee'
 
 // Pure step handler. The controller does the I/O — Redis read/write,
-// employee lookup, wage pre-computation, bcrypt + DB save for the PIN.
+// employee lookup, wage pre-computation, bcrypt hash + verify, DB writes.
 // This file just runs the state machine.
 //
 // On a new session the controller must hand us a NewSessionContext with the
 // resolved employee + pre-computed wage values. Null context means no
 // employee owns this msisdn — we END "not registered".
 //
-// `sideEffect` lets the controller know when we need work done after the
-// session write: today that's only "save this PIN". Disbursement will use
-// the same pattern when [ussd-pin-step] lands.
+// `pinVerified` is the result of bcrypt.compare on the pin_entry step. The
+// controller computes it before calling handleCallback so this module stays
+// sync + pure. Null for any other step.
+//
+// `sideEffect` lets the controller know when to do post-response work:
+// `save_pin` after first-use PIN setup, `disburse` after a successful
+// advance confirmation. The controller decides how each runs.
 
 export interface NewSessionContext {
   employee: EmployeeForUssd
@@ -27,7 +31,17 @@ export interface NewSessionContext {
   max_advance_pesewas: MoneyPesewas
 }
 
-export type SideEffect = { type: 'save_pin'; employeeId: string; pin: string }
+export type SideEffect =
+  | { type: 'save_pin'; employeeId: string; pin: string }
+  | {
+      type: 'disburse'
+      employeeId: string
+      employerId: string
+      requestedAmountPesewas: MoneyPesewas
+      feePesewas: MoneyPesewas
+      netDisbursementPesewas: MoneyPesewas
+      momoNumber: string
+    }
 
 export interface FlowResult {
   response: UssdResponse
@@ -37,9 +51,16 @@ export interface FlowResult {
 
 const PIN_REGEX = /^\d{4}$/
 
-// GHS 50 floor — the flat GHS 10 fee would otherwise exceed 20% of the
-// requested amount on advances smaller than this. See fee.ts.
+// GHS 50 floor — keeps the worker's experience clean (no GHS 5 advances)
+// and means our 3% fee always leaves something after Moolre's per-transaction
+// minimum (GHS 0.50). See fee.ts.
 const MIN_ADVANCE_PESEWAS: MoneyPesewas = 5_000
+
+// Three strikes per session. After the third wrong PIN we END and the
+// worker has to dial again. Longer-term lockouts (e.g. 30 minutes after
+// repeated failures across sessions) live at the rate-limit layer — not
+// here. See CLAUDE.md "Worker PINs".
+const MAX_PIN_ATTEMPTS = 3
 
 const NOT_REGISTERED = 'Number not registered on Wagr. Contact your employer.'
 const DEACTIVATED = 'Your access has been deactivated. Contact your employer.'
@@ -47,17 +68,19 @@ const PIN_SETUP_PROMPT = 'Welcome to Wagr.\nPlease set a 4-digit PIN:'
 const PIN_CONFIRM_PROMPT = 'Re-enter your PIN to confirm:'
 const PIN_INVALID = 'PIN must be 4 digits. Try again:'
 const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
+const PIN_ENTRY_PROMPT = 'Enter your 4-digit PIN:'
+const TOO_MANY_ATTEMPTS = 'Too many wrong PIN attempts. Try again later.'
 const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
 const AMOUNT_INVALID = 'Enter a whole cedi amount, e.g. 100.'
 const AMOUNT_TOO_LOW = `Minimum advance is ${formatGhs(MIN_ADVANCE_PESEWAS)}.`
 const CANCELLED = 'Cancelled. No advance created.'
-const PIN_STEP_STUB = 'PIN step coming soon.'
 const SESSION_ERROR = 'Session error. Please dial again.'
 
 export function handleCallback(
   callback: UssdCallback,
   currentSession: UssdSession | null,
   context: NewSessionContext | null,
+  pinVerified: boolean | null,
   now: Date,
 ): FlowResult {
   if (callback.new || !currentSession) {
@@ -75,6 +98,8 @@ export function handleCallback(
       return handleAmount(callback.message, currentSession)
     case 'confirm':
       return handleConfirm(callback.message, currentSession)
+    case 'pin_entry':
+      return handlePinEntry(callback.message, currentSession, pinVerified)
     default:
       return { response: end(SESSION_ERROR), nextSession: null }
   }
@@ -91,8 +116,10 @@ function initSession(context: NewSessionContext | null, now: Date): FlowResult {
   const base = {
     started_at: now.toISOString(),
     employee_id: context.employee.id,
+    employer_id: context.employee.employer_id,
     full_name: context.employee.full_name,
     momo_number: context.employee.momo_number,
+    ussd_pin_hash: context.employee.ussd_pin_hash,
     earned_wage_pesewas: context.earned_wage_pesewas,
     max_advance_pesewas: context.max_advance_pesewas,
   }
@@ -178,9 +205,10 @@ function handleAmount(message: string, session: UssdSession): FlowResult {
 
 function handleConfirm(message: string, session: UssdSession): FlowResult {
   if (message === '1') {
-    // PIN step ([ussd-pin-step]) will replace this stub. Keep the session
-    // around with confirm in case the user navigates back.
-    return { response: end(PIN_STEP_STUB), nextSession: null }
+    return {
+      response: reply(PIN_ENTRY_PROMPT),
+      nextSession: { ...session, step: 'pin_entry', pin_attempts: 0 },
+    }
   }
   if (message === '2') {
     return { response: end(CANCELLED), nextSession: null }
@@ -188,6 +216,59 @@ function handleConfirm(message: string, session: UssdSession): FlowResult {
   // Anything else — re-show the confirm screen rather than killing the
   // session on a typo.
   return { response: reply(confirmScreen(session)), nextSession: session }
+}
+
+function handlePinEntry(
+  message: string,
+  session: UssdSession,
+  pinVerified: boolean | null,
+): FlowResult {
+  // Format check first — typos don't burn an attempt. Lets the worker
+  // recover from a slipped keystroke without losing their three tries.
+  if (!PIN_REGEX.test(message)) {
+    return { response: reply(PIN_INVALID), nextSession: session }
+  }
+  if (pinVerified) {
+    // Disbursement is async — see header. We've already returned the
+    // success message; the controller fires the disbursement after the
+    // session write completes.
+    return {
+      response: end(advanceSubmittedMessage(session)),
+      nextSession: null,
+      sideEffect: disburseSideEffect(session),
+    }
+  }
+
+  const attempts = (session.pin_attempts ?? 0) + 1
+  if (attempts >= MAX_PIN_ATTEMPTS) {
+    return { response: end(TOO_MANY_ATTEMPTS), nextSession: null }
+  }
+  const remaining = MAX_PIN_ATTEMPTS - attempts
+  const noun = remaining === 1 ? 'attempt' : 'attempts'
+  return {
+    response: reply(`Wrong PIN. ${remaining} ${noun} remaining.\n${PIN_ENTRY_PROMPT}`),
+    nextSession: { ...session, pin_attempts: attempts },
+  }
+}
+
+function disburseSideEffect(session: UssdSession): SideEffect {
+  // The state machine guarantees these fields are set before pin_entry —
+  // amount step writes them, confirm step preserves them. Guard with
+  // zeros if a stale session somehow bypasses that.
+  return {
+    type: 'disburse',
+    employeeId: session.employee_id,
+    employerId: session.employer_id,
+    requestedAmountPesewas: (session.requested_amount_pesewas ?? 0) as MoneyPesewas,
+    feePesewas: (session.fee_pesewas ?? 0) as MoneyPesewas,
+    netDisbursementPesewas: (session.net_disbursement_pesewas ?? 0) as MoneyPesewas,
+    momoNumber: session.momo_number,
+  }
+}
+
+function advanceSubmittedMessage(session: UssdSession): string {
+  const net = session.net_disbursement_pesewas ?? 0
+  return `Request submitted. ${formatGhs(net)} will arrive on ${session.momo_number} shortly.`
 }
 
 // Entry into the balance step — handles the "no cap available" END case
