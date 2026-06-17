@@ -53,6 +53,16 @@ const BALANCE_SESSION: UssdSession = {
   max_advance_pesewas: 75_000 as MoneyPesewas,
 }
 
+const AMOUNT_SESSION: UssdSession = {
+  step: 'amount',
+  started_at: NOW.toISOString(),
+  employee_id: EMPLOYEE_ID,
+  full_name: 'Ama Boateng',
+  is_first_use: false,
+  earned_wage_pesewas: 150_000 as MoneyPesewas,
+  max_advance_pesewas: 75_000 as MoneyPesewas,
+}
+
 const PIN_NEW_SESSION: UssdSession = {
   step: 'pin_setup_new',
   started_at: NOW.toISOString(),
@@ -130,10 +140,12 @@ describe('handleCallback — session init', () => {
 })
 
 describe('handleCallback — balance step', () => {
-  it('ends with the amount stub on 1', () => {
+  it('transitions to the amount step on 1', () => {
     const result = handleCallback(callback({ message: '1' }), BALANCE_SESSION, null, NOW)
-    expect(result.response).toEqual({ message: 'Amount step coming soon.', reply: false })
-    expect(result.nextSession).toBeNull()
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Enter amount')
+    expect(result.response.message).toContain('GHS 750.00')
+    expect(result.nextSession?.step).toBe('amount')
   })
 
   it('re-prompts on any other input and keeps the session', () => {
@@ -141,6 +153,56 @@ describe('handleCallback — balance step', () => {
     expect(result.response.reply).toBe(true)
     expect(result.response.message).toContain('Press 1 to continue.')
     expect(result.nextSession).toEqual(BALANCE_SESSION)
+  })
+})
+
+describe('handleCallback — amount step', () => {
+  it('re-prompts with the floor message when amount is below GHS 50', () => {
+    const result = handleCallback(callback({ message: '40' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Minimum advance is GHS 50.00')
+    expect(result.response.message).toContain('Enter amount')
+    expect(result.nextSession).toEqual(AMOUNT_SESSION)
+  })
+
+  it('re-prompts with the cap message when amount is above max', () => {
+    const result = handleCallback(callback({ message: '800' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Max advance is GHS 750.00')
+    expect(result.nextSession).toEqual(AMOUNT_SESSION)
+  })
+
+  it('re-prompts when input is not a number', () => {
+    const result = handleCallback(callback({ message: 'abc' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('whole cedi amount')
+    expect(result.nextSession).toEqual(AMOUNT_SESSION)
+  })
+
+  it('re-prompts when amount is zero or negative', () => {
+    const result = handleCallback(callback({ message: '0' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.nextSession).toEqual(AMOUNT_SESSION)
+  })
+
+  it('accepts the GHS 50 floor exactly', () => {
+    const result = handleCallback(callback({ message: '50' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain('Confirm step coming soon')
+    expect(result.nextSession).toBeNull()
+  })
+
+  it('accepts the max cap exactly', () => {
+    const result = handleCallback(callback({ message: '750' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(false)
+    expect(result.nextSession).toBeNull()
+  })
+
+  it('accepts a valid mid-range amount', () => {
+    const result = handleCallback(callback({ message: '200' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain('Confirm step coming soon')
+    expect(result.nextSession).toBeNull()
   })
 })
 
