@@ -414,6 +414,68 @@ card — don't try to derive it by summing disbursements minus collections.
 
 ---
 
+## Pricing (snapshot, 2026-06-17)
+
+Compiled from [moolre.com/pricing](https://moolre.com/pricing). This is reference
+material for engineering decisions — never hardcoded into the application. Moolre
+charges these fees on their side when each call settles; our code just initiates
+the call and trusts the wallet ledger.
+
+### Per-call fees
+
+| Service | Moolre fee | Network fee | Effective per transaction |
+|---|---|---|---|
+| Transfers (money out to worker) | 1%, min GHS 0.50, **cap GHS 10** | 0% | 1% of net up to GHS 10 |
+| Payments (money in from employer float) | 1%, min GHS 0.50, cap GHS 10 | 0.5–1%, capped GHS 20 | ~1.5–2%, capped ~GHS 30 |
+| SMS | ~GHS 0.05 per message | — | flat |
+| WhatsApp | ~GHS 0.05 per message | — | flat |
+| USSD per session | GHS 0.014 | — | flat |
+
+### Fixed costs
+
+| Item | Cost | Notes |
+|---|---|---|
+| USSD shared code | **GHS 420 / month** | Use for the buildathon — affordable |
+| USSD dedicated code | GHS 3,500 / network, or GHS 10,500 / all three | Out of reach pre-revenue |
+
+### Open questions (not on the pricing page)
+
+These need confirmation before [moolre-disbursement] can ship its accounting layer.
+
+1. **How does Moolre collect their Transfers fee?**
+   - **Assumption (Option A):** Moolre debits Wagr's wallet for the transfer
+     amount AND their fee separately. Worker receives exactly what we promised
+     on the USSD confirm screen. This is the industry standard.
+   - Alternative (Option B): Moolre skims their cut from inside the transfer.
+     Worker would receive less than promised. Would force a gross-up of the
+     transfer amount or a smaller "you receive" number on the confirm screen.
+   - **How to resolve:** trigger one real disbursement in the Moolre sandbox
+     and compare the worker's wallet balance to what was promised on screen.
+     Pending USSD code purchase.
+
+2. **Settlement fees from Moolre wallet to a Ghanaian bank account.**
+   - The pricing page is silent. Could be free, flat, or a percentage.
+   - Affects Wagr's true per-advance margin (currently calculated as ~2% of
+     advance net of Moolre's Transfers fee).
+   - **How to resolve:** email Moolre support directly.
+
+### Why this matters for the build
+
+- **Wagr's 3% advance fee is tuned against Moolre's 1% Transfers cut.** Margin
+  stays positive at every advance size we permit (GHS 50–1,000 cap). See the
+  rationale in [fee.ts](../../apps/api/src/lib/wage-engine/fee.ts).
+- **The GHS 420/month USSD subscription is a fixed cost** that has to be earned
+  back across all advances. Rough breakeven sits around 105 advances/month at
+  an average advance size of GHS 200.
+- **The disbursement spec needs the gross/net split right.** Employer float must
+  be debited by **gross requested amount** (worker net + Wagr fee), not by the
+  net disbursed. Otherwise Wagr's 3% fee never lands in a Wagr-owned account.
+  See [feature-disbursements.md](../specs/feature-disbursements.md) for the
+  current spec — it currently says "net_disbursed" in three places and needs
+  updating before [moolre-disbursement] is implemented.
+
+---
+
 ## Last updated
 
 Compiled from docs.moolre.com on 2026-06-06. Refresh by re-reading the source

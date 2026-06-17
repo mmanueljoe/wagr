@@ -34,13 +34,19 @@ export interface UssdSession {
   started_at: string
   employee_id: string
   full_name: string
+  momo_number: string
   is_first_use: boolean
   earned_wage_pesewas: MoneyPesewas
   max_advance_pesewas: MoneyPesewas
+  // Set once the worker enters a valid amount at the amount step. Carried
+  // through to the confirm screen and the PIN step that triggers disbursement.
+  requested_amount_pesewas?: MoneyPesewas
+  fee_pesewas?: MoneyPesewas
+  net_disbursement_pesewas?: MoneyPesewas
   // Transient — only set between pin_setup_new and pin_setup_confirm steps
   // while the worker enters and re-enters their new PIN. Cleared once the
   // PIN is hashed and persisted to the employee row.
   new_pin?: string
 }
 
-export type UssdStep = 'balance' | 'pin_setup_new' | 'pin_setup_confirm' | 'amount'
+export type UssdStep = 'balance' | 'pin_setup_new' | 'pin_setup_confirm' | 'amount' | 'confirm'
