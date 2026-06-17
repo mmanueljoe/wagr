@@ -16,6 +16,9 @@ export const AUDIT_ACTIONS = [
   'employee_deactivated',
   'employee_reactivated',
   'employee_pin_set',
+  'advance_requested',
+  'advance_disbursed',
+  'advance_failed',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

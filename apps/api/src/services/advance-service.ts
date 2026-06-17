@@ -1,5 +1,6 @@
 import type { MoneyPesewas } from '@wagr/types'
 import { AppError } from '../errors/app-error'
+import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { supabase } from '../lib/supabase'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
@@ -38,4 +39,249 @@ export async function getCurrentPeriodDisbursedPesewas(
   // boundary so the wage engine sees pesewas integers only.
   const totalCedis = data.reduce((sum, row) => sum + row.requested_amount, 0)
   return Math.round(totalCedis * PESEWAS_PER_CEDI) as MoneyPesewas
+}
+
+// ─── Advance lifecycle ───────────────────────────────────────────────────
+
+// Reconciled interpretation of the spec (feature-disbursements.md):
+//   - Float is debited at create-time with the gross requested_amount.
+//   - On Moolre success: status → disbursed, wagr_ledger row written.
+//   - On Moolre failure: status → failed, float refunded (gross).
+// Read-then-write debit isn't strictly race-safe across concurrent advances
+// from the same employer. The DB-level CHECK (float_balance >= 0) is the
+// backstop. A proper transactional debit is a follow-up — flagged in the
+// spec's open questions.
+
+export interface CreateAdvanceInput {
+  employeeId: string
+  employerId: string
+  requestedPesewas: MoneyPesewas
+  feePesewas: MoneyPesewas
+  netPesewas: MoneyPesewas
+}
+
+export interface CreatedAdvance {
+  id: string
+  externalRef: string
+  netCedis: number
+  requestedCedis: number
+  feeCedis: number
+}
+
+export async function createAdvanceRequest(input: CreateAdvanceInput): Promise<CreatedAdvance> {
+  const requestedCedis = pesewasToCedis(input.requestedPesewas)
+  const feeCedis = pesewasToCedis(input.feePesewas)
+  const netCedis = pesewasToCedis(input.netPesewas)
+
+  await debitFloat(input.employerId, requestedCedis)
+
+  const externalRef = `wagr-adv-${crypto.randomUUID()}`
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .insert({
+      employee_id: input.employeeId,
+      employer_id: input.employerId,
+      requested_amount: requestedCedis,
+      fee_amount: feeCedis,
+      net_disbursed: netCedis,
+      status: 'pending',
+      moolre_external_ref: externalRef,
+    })
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    // The float was already debited — refund it best-effort before bubbling.
+    await refundFloat(input.employerId, requestedCedis).catch((err) =>
+      logger.error(
+        { err, employerId: input.employerId },
+        'float refund after insert failure failed',
+      ),
+    )
+    logger.error({ err: error, employeeId: input.employeeId }, 'advance_request insert failed')
+    throw new AppError('ADVANCE_CREATE_FAILED', 500, 'Could not create advance request')
+  }
+
+  await audit({
+    action: 'advance_requested',
+    actor: 'worker',
+    employerId: input.employerId,
+    employeeId: input.employeeId,
+    metadata: {
+      advance_request_id: data.id,
+      requested_amount: requestedCedis,
+      fee_amount: feeCedis,
+      net_disbursed: netCedis,
+    },
+  })
+
+  return { id: data.id, externalRef, netCedis, requestedCedis, feeCedis }
+}
+
+export async function markAdvanceDisbursed(
+  advanceRequestId: string,
+  moolreTransactionId: string | null,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .update({
+      status: 'disbursed',
+      disbursed_at: new Date().toISOString(),
+      moolre_transaction_id: moolreTransactionId,
+    })
+    .eq('id', advanceRequestId)
+    .eq('status', 'pending')
+    .select('id, employer_id, employee_id, fee_amount')
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, advanceRequestId }, 'failed to mark advance disbursed')
+    throw new AppError('ADVANCE_UPDATE_FAILED', 500, 'Could not update advance request')
+  }
+  if (!data) {
+    // Either the id is wrong or the row is already terminal — don't double-process.
+    logger.warn({ advanceRequestId }, 'mark disbursed: advance not found or not pending')
+    return
+  }
+
+  await accrueWagrRevenue(advanceRequestId, data.fee_amount)
+
+  await audit({
+    action: 'advance_disbursed',
+    actor: 'system',
+    employerId: data.employer_id,
+    employeeId: data.employee_id,
+    metadata: {
+      advance_request_id: data.id,
+      moolre_transaction_id: moolreTransactionId,
+    },
+  })
+}
+
+export async function markAdvanceFailed(
+  advanceRequestId: string,
+  failureReason: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .update({
+      status: 'failed',
+      failure_reason: failureReason.slice(0, 500),
+    })
+    .eq('id', advanceRequestId)
+    .eq('status', 'pending')
+    .select('id, employer_id, employee_id, requested_amount')
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, advanceRequestId }, 'failed to mark advance failed')
+    throw new AppError('ADVANCE_UPDATE_FAILED', 500, 'Could not update advance request')
+  }
+  if (!data) {
+    logger.warn({ advanceRequestId }, 'mark failed: advance not found or not pending')
+    return
+  }
+
+  await refundFloat(data.employer_id, data.requested_amount).catch((err) =>
+    logger.error({ err, employerId: data.employer_id, advanceRequestId }, 'float refund failed'),
+  )
+
+  await audit({
+    action: 'advance_failed',
+    actor: 'system',
+    employerId: data.employer_id,
+    employeeId: data.employee_id,
+    metadata: {
+      advance_request_id: data.id,
+      failure_reason: failureReason.slice(0, 500),
+    },
+  })
+}
+
+// ─── Internals ───────────────────────────────────────────────────────────
+
+async function debitFloat(employerId: string, grossCedis: number): Promise<void> {
+  const { data: emp, error: readErr } = await supabase
+    .from('employers')
+    .select('float_balance')
+    .eq('id', employerId)
+    .single()
+
+  if (readErr || !emp) {
+    logger.error({ err: readErr, employerId }, 'failed to read employer float')
+    throw new AppError('FLOAT_READ_FAILED', 500, 'Could not read float balance')
+  }
+  if (emp.float_balance < grossCedis) {
+    throw new AppError('INSUFFICIENT_FLOAT', 409, 'Employer float is insufficient for this advance')
+  }
+
+  const next = roundCedis(emp.float_balance - grossCedis)
+  const { error: writeErr } = await supabase
+    .from('employers')
+    .update({ float_balance: next })
+    .eq('id', employerId)
+
+  if (writeErr) {
+    logger.error({ err: writeErr, employerId }, 'failed to debit float')
+    throw new AppError('FLOAT_DEBIT_FAILED', 500, 'Could not debit float balance')
+  }
+}
+
+async function refundFloat(employerId: string, grossCedis: number): Promise<void> {
+  const { data: emp, error: readErr } = await supabase
+    .from('employers')
+    .select('float_balance')
+    .eq('id', employerId)
+    .single()
+
+  if (readErr || !emp) {
+    throw new AppError('FLOAT_READ_FAILED', 500, 'Could not read float balance')
+  }
+  const next = roundCedis(emp.float_balance + grossCedis)
+  const { error } = await supabase
+    .from('employers')
+    .update({ float_balance: next })
+    .eq('id', employerId)
+  if (error) {
+    throw new AppError('FLOAT_REFUND_FAILED', 500, 'Could not refund float balance')
+  }
+}
+
+interface WagrLedgerInsert {
+  advance_request_id: string
+  fee_amount: number
+}
+
+async function accrueWagrRevenue(advanceRequestId: string, feeCedis: number): Promise<void> {
+  // wagr_ledger isn't yet in the generated supabase types — run
+  // `pnpm db:types` after applying migration 20260617120000 to remove
+  // this cast. Until then, the schema is correct on the DB side; we just
+  // bypass the type check at the call.
+  const ledger = (
+    supabase as unknown as {
+      from(table: 'wagr_ledger'): {
+        insert(row: WagrLedgerInsert): Promise<{ error: { message: string } | null }>
+      }
+    }
+  ).from('wagr_ledger')
+
+  const { error } = await ledger.insert({
+    advance_request_id: advanceRequestId,
+    fee_amount: feeCedis,
+  })
+  if (error) {
+    // Don't throw — the disbursement already succeeded. Loud log + future
+    // reconciliation will catch missing ledger rows.
+    logger.error({ err: error, advanceRequestId, feeCedis }, 'wagr_ledger insert failed')
+  }
+}
+
+function pesewasToCedis(pesewas: MoneyPesewas): number {
+  return roundCedis(pesewas / PESEWAS_PER_CEDI)
+}
+
+function roundCedis(value: number): number {
+  // numeric(12,2) — keep two decimal places exact to avoid drift on repeated
+  // float arithmetic.
+  return Math.round(value * 100) / 100
 }
