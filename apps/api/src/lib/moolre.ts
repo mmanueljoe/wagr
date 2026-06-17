@@ -107,6 +107,40 @@ export async function getTransferStatus(externalRef: string): Promise<TransferSt
   }
 }
 
+// ── SMS ──────────────────────────────────────────────────────────────────
+
+export interface SendSmsInput {
+  to: string // Recipient phone, local format (e.g. 0241235993).
+  message: string
+  ref?: string // Optional caller-side reference for delivery tracking.
+}
+
+// Approved sender ID, max 11 chars. The sandbox substitutes Moolre's own
+// sender ID until ours is approved — see
+// docs/architecture/moolre-api-reference.md (SMS API → Sandbox behaviour).
+const SMS_SENDER_ID = 'Wagr'
+
+// POST /open/sms/send with X-API-VASKEY (the SMS service's per-instance key).
+// Throws AppError on transport/HTTP failures so callers can decide whether
+// to swallow (notification flows) or surface (admin tooling).
+export async function sendSms(input: SendSmsInput): Promise<void> {
+  const body = {
+    type: 1,
+    senderid: SMS_SENDER_ID,
+    messages: [
+      {
+        recipient: input.to,
+        message: input.message,
+        ...(input.ref ? { ref: input.ref } : {}),
+      },
+    ],
+  }
+
+  await postJson('/open/sms/send', body, {
+    'X-API-VASKEY': env.MOOLRE_SMS_VASKEY,
+  })
+}
+
 // ── HTTP layer ───────────────────────────────────────────────────────────
 
 interface MoolreEnvelope {

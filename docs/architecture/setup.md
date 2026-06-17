@@ -58,7 +58,8 @@ MOOLRE_BASE_URL=https://sandbox.moolre.com
 MOOLRE_API_USER=your-moolre-username
 MOOLRE_API_KEY=your-private-key       # Used for Transfers, Account Status
 MOOLRE_API_PUBKEY=your-public-key     # Used for Payments (Collections)
-MOOLRE_API_VASKEY=your-vas-key        # Used for SMS and WhatsApp
+MOOLRE_SMS_VASKEY=your-sms-service-vas-key            # SMS service instance
+MOOLRE_WHATSAPP_VASKEY=your-whatsapp-service-vas-key  # WhatsApp service instance
 MOOLRE_ACCOUNT_NUMBER=your-moolre-account-number
 MOOLRE_WEBHOOK_SECRET=your-account-secret  # Verifies webhook authenticity
 

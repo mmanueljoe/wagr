@@ -18,7 +18,12 @@ export const env = createEnv({
     MOOLRE_API_USER: z.string().min(1),
     MOOLRE_API_KEY: z.string().min(1),
     MOOLRE_API_PUBKEY: z.string().min(1),
-    MOOLRE_API_VASKEY: z.string().min(1),
+    // VAS keys are issued per service in the Moolre dashboard, not per
+    // account — one key per SMS service instance, one per WhatsApp service
+    // instance. Both go in the same X-API-VASKEY header at request time,
+    // just with different values depending on which API we're calling.
+    MOOLRE_SMS_VASKEY: z.string().min(1),
+    MOOLRE_WHATSAPP_VASKEY: z.string().min(1),
     MOOLRE_ACCOUNT_NUMBER: z.string().min(1),
     MOOLRE_USSD_SECRET: z.string().min(1),
 

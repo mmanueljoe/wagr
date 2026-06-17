@@ -4,6 +4,11 @@ import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { supabase } from '../lib/supabase'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
+import {
+  notifyAdvanceDisbursed,
+  notifyAdvanceFailed,
+  notifyAdvanceRequested,
+} from './notification-service'
 
 const PESEWAS_PER_CEDI = 100
 
@@ -55,6 +60,7 @@ export async function getCurrentPeriodDisbursedPesewas(
 export interface CreateAdvanceInput {
   employeeId: string
   employerId: string
+  momoNumber: string
   requestedPesewas: MoneyPesewas
   feePesewas: MoneyPesewas
   netPesewas: MoneyPesewas
@@ -115,6 +121,11 @@ export async function createAdvanceRequest(input: CreateAdvanceInput): Promise<C
     },
   })
 
+  await notifyAdvanceRequested({
+    momoNumber: input.momoNumber,
+    requestedPesewas: input.requestedPesewas,
+  })
+
   return { id: data.id, externalRef, netCedis, requestedCedis, feeCedis }
 }
 
@@ -131,7 +142,7 @@ export async function markAdvanceDisbursed(
     })
     .eq('id', advanceRequestId)
     .eq('status', 'pending')
-    .select('id, employer_id, employee_id, fee_amount')
+    .select('id, employer_id, employee_id, fee_amount, net_disbursed, employees!inner(momo_number)')
     .maybeSingle()
 
   if (error) {
@@ -156,6 +167,11 @@ export async function markAdvanceDisbursed(
       moolre_transaction_id: moolreTransactionId,
     },
   })
+
+  await notifyAdvanceDisbursed({
+    momoNumber: extractMomo(data.employees),
+    netPesewas: cedisToPesewas(data.net_disbursed),
+  })
 }
 
 export async function markAdvanceFailed(
@@ -170,7 +186,7 @@ export async function markAdvanceFailed(
     })
     .eq('id', advanceRequestId)
     .eq('status', 'pending')
-    .select('id, employer_id, employee_id, requested_amount')
+    .select('id, employer_id, employee_id, requested_amount, employees!inner(momo_number)')
     .maybeSingle()
 
   if (error) {
@@ -196,6 +212,8 @@ export async function markAdvanceFailed(
       failure_reason: failureReason.slice(0, 500),
     },
   })
+
+  await notifyAdvanceFailed({ momoNumber: extractMomo(data.employees) })
 }
 
 // ─── Internals ───────────────────────────────────────────────────────────
@@ -280,8 +298,20 @@ function pesewasToCedis(pesewas: MoneyPesewas): number {
   return roundCedis(pesewas / PESEWAS_PER_CEDI)
 }
 
+function cedisToPesewas(cedis: number): MoneyPesewas {
+  return Math.round(cedis * PESEWAS_PER_CEDI) as MoneyPesewas
+}
+
 function roundCedis(value: number): number {
   // numeric(12,2) — keep two decimal places exact to avoid drift on repeated
   // float arithmetic.
   return Math.round(value * 100) / 100
+}
+
+// Supabase's PostgREST join returns the related row as either an object or
+// a single-element array depending on the relationship cardinality.
+// employees!inner gives us exactly one row but the generated type widens to
+// the union — narrow defensively.
+function extractMomo(joined: { momo_number: string } | { momo_number: string }[]): string {
+  return Array.isArray(joined) ? (joined[0]?.momo_number ?? '') : joined.momo_number
 }
