@@ -34,15 +34,16 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 
 ### Advance Disbursement ([moolre-disbursement])
 - [ ] Disbursement triggered asynchronously after USSD PIN confirmation
-- [ ] Moolre Transfers API called (POST /open/transact/transfer) with: type=1, channel (network code), currency=GHS, amount (net_disbursed), receiver (momo_number), externalref, accountnumber
+- [ ] Moolre Transfers API called (POST /open/transact/transfer) with: type=1, channel (network code), currency=GHS, **amount = net_disbursed** (the worker receives net; Wagr's fee stays in Wagr's wallet — see Float accounting below), receiver (momo_number), externalref, accountnumber
 - [ ] externalref format: `wagr-adv-{advance_request_id}` — Moolre uses this as an idempotency key; the same externalref will never charge twice
 - [ ] advance_request stays in status: pending until Transfer Status confirms terminal state
 - [ ] Transfer Status (POST /open/transact/status) polled by externalref every 5 seconds, up to 24 attempts (2 minutes total)
 - [ ] On txstatus = 1 (Successful): advance_request → status: disbursed
-- [ ] On txstatus = 2 (Failed): advance_request → status: failed, employer notified via SMS, float_balance refunded
+- [ ] On txstatus = 2 (Failed): advance_request → status: failed, employer notified via SMS, **float_balance refunded by the gross requested_amount** (Wagr revenue is not accrued because the transfer didn't happen)
 - [ ] On txstatus = 0 (Pending) or 3 (Unknown): keep polling — **never assume failure on these values** per Moolre's explicit warning
 - [ ] If still non-terminal after 24 polls, alert the team but leave the advance_request in pending (do not mark failed)
-- [ ] employer float_balance decremented by net_disbursed amount when status becomes disbursed
+- [ ] employer `float_balance` decremented by **gross `requested_amount`** when status becomes disbursed — not `net_disbursed`. The gross is what the employer is fronting; the worker takes net, Wagr keeps the fee.
+- [ ] Wagr revenue accrued on successful disbursement: a row in `wagr_ledger` (proposed table — one row per fee event with `{ advance_request_id, fee_pesewas, accrued_at }`) so total Wagr revenue is derivable by sum. Avoids a mutable singleton balance.
 - [ ] All state transitions written to audit_log
 
 ### Float Funding ([float-funding])
@@ -59,7 +60,7 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 
 ### Payday Recovery ([payday-recovery])
 - [ ] Triggered when employer clicks Process Payroll on the dashboard
-- [ ] System calculates total outstanding advances: SUM of net_disbursed for advance_requests with status: disbursed in the current pay period for this employer
+- [ ] System calculates total outstanding advances: **SUM of `requested_amount` (gross)** for advance_requests with status: disbursed in the current pay period for this employer — this is what the employer fronted (worker's net + Wagr's fee, both came from the employer's float). The worker repays the gross from their salary; the Wagr fee was their cost of taking the advance early.
 - [ ] Moolre Payments API called for the total recovery amount, externalref = `wagr-repay-{repayment_id}`
 - [ ] If the employer authorises the recovery from within the dashboard via the same USSD session that prompted the action, pass the USSD `sessionid` in the Payments call to skip the OTP step. This avoids a double-PIN UX.
 - [ ] When Moolre webhook fires with txstatus = 1: all included advance_request records updated to status: repaid, repayment record created
@@ -185,6 +186,58 @@ Used as Moolre's idempotency key. Same externalref never charges twice — safe 
 ### Network code rule
 
 The database stores the canonical `Network` value (`'mtn' | 'telecel' | 'at'`) on the `employees` and `employers` tables. Moolre's integer codes are translated only at the call site inside `moolre.ts`. **Never pass raw Moolre integer network codes around the codebase** — they differ by API and are a common source of bugs.
+
+### Float accounting model
+
+Wagr has **one Moolre business account** (`MOOLRE_ACCOUNT_NUMBER`). Its wallet
+holds float for all employers, commingled. Each employer's share is bookkept
+in Postgres on `employer.float_balance`. Wagr's accumulated fee revenue is
+bookkept separately in `wagr_ledger` (one row per advance fee).
+
+This is the only model Moolre's API actually supports — there is no
+sub-account API. The docs confirm `type=1` is the only Create Account flow,
+and `sublist` is a settlement-routing field, not a sub-wallet primitive.
+
+#### Worked example — one advance
+
+Worker Ama requests **GHS 200**. Wagr's 3% fee is **GHS 6**. Worker net = **GHS 194**.
+
+| Step | Wagr Moolre wallet | `employer.float_balance` (DB) | `wagr_ledger` total (DB) |
+|---|---|---|---|
+| Before | GHS 200 | GHS 200 | GHS 0 |
+| Disbursement (assuming Moolre Option A — sender pays fee separately) | −GHS 194 (transfer) − ~GHS 2 (Moolre's 1%) = **−GHS 195.94** | **−GHS 200 (gross)** | **+GHS 6 (Wagr fee)** |
+| After | GHS 4.06 | GHS 0 | GHS 6 |
+
+Key idea: the **GHS 6 Wagr fee never leaves the wallet** — it's just retagged
+from "employer float" to "Wagr revenue" inside our books. The only thing
+that physically leaves the wallet on a disbursement is **net + Moolre's own
+transaction fee**. On payday, the employer repays the gross GHS 200, restoring
+the float.
+
+#### Reconciliation invariant
+
+At any point in time:
+
+```
+Wagr Moolre wallet balance  ≈  SUM(employer.float_balance)
+                              + SUM(wagr_ledger.fee_pesewas)
+                              − SUM(moolre_transaction_fees_paid_to_date)
+```
+
+"≈" not "=" because Moolre's transaction fees aren't fully predictable
+(rounding, caps, network fee variations). We track them via a daily
+reconciliation job, not by predicting them in code.
+
+#### Open questions blocking [moolre-disbursement]
+
+1. **Moolre's fee deduction model** — Option A (sender pays separately) is
+   the assumption above. The docs don't state it explicitly; the Transfer
+   Status response shows `amountfee` and `fee` fields but never specifies
+   who pays. **Confirm in sandbox before shipping** — if it turns out to be
+   Option B (skim from the transfer), the Moolre call has to gross up the
+   amount so the worker actually receives the promised net.
+2. **Settlement fee from Moolre wallet to bank** — silent on the pricing
+   page. Email Moolre support.
 
 ---
 
