@@ -2,14 +2,22 @@ import { type MoneyPesewas, type UssdSession, msisdnToLocal } from '@wagr/types'
 import bcrypt from 'bcrypt'
 import type { Request, Response } from 'express'
 import { logger } from '../lib/logger'
+import { initiateTransfer } from '../lib/moolre'
+import { pollUntilTerminal } from '../lib/transfer-polling'
 import { type FlowResult, type NewSessionContext, handleCallback } from '../lib/ussd-flow'
 import { deleteSession, getSession, setSession } from '../lib/ussd-session'
 import { calculateEarnedWage } from '../lib/wage-engine/earned-wage'
 import { calculateMaxAdvance } from '../lib/wage-engine/max-advance'
-import { getCurrentPeriodDisbursedPesewas } from '../services/advance-service'
+import {
+  type CreatedAdvance,
+  createAdvanceRequest,
+  getCurrentPeriodDisbursedPesewas,
+  markAdvanceFailed,
+} from '../services/advance-service'
 import {
   type EmployeeForUssd,
   findEmployeeByMomoNumber,
+  findEmployeeForDisbursement,
   setEmployeePinHash,
 } from '../services/employee-service'
 
@@ -125,19 +133,69 @@ async function runSideEffect(result: FlowResult, savedPinHash: string | null): P
     return
   }
   if (result.sideEffect.type === 'disburse') {
-    // STUB — [moolre-disbursement] will replace this with the advance_request
-    // DB insert + Moolre Transfers call. Logging at info so the demo flow
-    // is observable end-to-end until that slug lands.
-    logger.info(
-      {
-        employeeId: result.sideEffect.employeeId,
-        employerId: result.sideEffect.employerId,
-        requestedPesewas: result.sideEffect.requestedAmountPesewas,
-        feePesewas: result.sideEffect.feePesewas,
-        netPesewas: result.sideEffect.netDisbursementPesewas,
-      },
-      'advance approved — disbursement pending [moolre-disbursement]',
+    // Fire-and-forget: the USSD response has already gone back to Moolre.
+    // Errors in here can't be surfaced to the worker — they're logged for
+    // ops follow-up. Worst case the worker sees no disbursement and has
+    // to contact their employer.
+    const sideEffect = result.sideEffect
+    void runDisbursement(sideEffect).catch((err) => {
+      logger.error(
+        {
+          err,
+          employeeId: sideEffect.employeeId,
+          requestedPesewas: sideEffect.requestedAmountPesewas,
+        },
+        'disbursement orchestration failed',
+      )
+    })
+    return
+  }
+}
+
+async function runDisbursement(
+  sideEffect: Extract<FlowResult['sideEffect'], { type: 'disburse' }>,
+): Promise<void> {
+  const employee = await findEmployeeForDisbursement(sideEffect.employeeId)
+  if (!employee) {
+    logger.error({ employeeId: sideEffect.employeeId }, 'disbursement: employee lookup miss')
+    return
+  }
+
+  let advance: CreatedAdvance
+  try {
+    advance = await createAdvanceRequest({
+      employeeId: sideEffect.employeeId,
+      employerId: sideEffect.employerId,
+      requestedPesewas: sideEffect.requestedAmountPesewas,
+      feePesewas: sideEffect.feePesewas,
+      netPesewas: sideEffect.netDisbursementPesewas,
+    })
+  } catch (err) {
+    logger.error({ err, employeeId: sideEffect.employeeId }, 'failed to create advance request')
+    return
+  }
+
+  try {
+    await initiateTransfer({
+      amount: advance.netCedis,
+      receiver: employee.momo_number,
+      network: employee.network,
+      externalRef: advance.externalRef,
+    })
+  } catch (err) {
+    logger.error(
+      { err, advanceRequestId: advance.id },
+      'moolre initiate transfer failed — marking advance failed and refunding float',
+    )
+    await markAdvanceFailed(advance.id, 'Moolre initiate transfer call failed').catch((markErr) =>
+      logger.error({ err: markErr, advanceRequestId: advance.id }, 'mark-failed also failed'),
     )
     return
   }
+
+  // Poll in the background. Returns when terminal (or budget exhausted) —
+  // we don't await this from the caller's perspective.
+  pollUntilTerminal(advance.id, advance.externalRef).catch((err) =>
+    logger.error({ err, advanceRequestId: advance.id }, 'unexpected polling error'),
+  )
 }

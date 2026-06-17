@@ -161,6 +161,40 @@ function rowToEmployeeForUssd(row: EmployeeForUssdRow): EmployeeForUssd {
   }
 }
 
+// Minimal shape needed by the disbursement flow — network is the only
+// extra field beyond what the USSD shape already carries. Kept separate
+// from EmployeeForUssd because the network code never needs to enter the
+// USSD session state.
+export interface EmployeeForDisbursement {
+  id: string
+  employer_id: string
+  momo_number: string
+  network: 'mtn' | 'telecel' | 'at'
+}
+
+export async function findEmployeeForDisbursement(
+  employeeId: string,
+): Promise<EmployeeForDisbursement | null> {
+  const { data, error } = await supabase
+    .from('employees')
+    .select('id, employer_id, momo_number, network')
+    .eq('id', employeeId)
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, employeeId }, 'failed to look up employee for disbursement')
+    throw new AppError('EMPLOYEE_LOOKUP_FAILED', 500, 'Could not look up worker')
+  }
+  if (!data) return null
+
+  return {
+    id: data.id,
+    employer_id: data.employer_id,
+    momo_number: data.momo_number,
+    network: data.network as 'mtn' | 'telecel' | 'at',
+  }
+}
+
 export async function setEmployeePinHash(employeeId: string, pinHash: string): Promise<void> {
   const { error } = await supabase
     .from('employees')
