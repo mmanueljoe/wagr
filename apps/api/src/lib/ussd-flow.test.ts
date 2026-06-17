@@ -1,7 +1,7 @@
-import type { UssdCallback, UssdSession } from '@wagr/types'
+import type { MoneyPesewas, UssdCallback, UssdSession } from '@wagr/types'
 import { describe, expect, it } from 'vitest'
 import type { EmployeeForUssd } from '../services/employee-service'
-import { handleCallback } from './ussd-flow'
+import { type NewSessionContext, handleCallback } from './ussd-flow'
 
 const NOW = new Date('2026-06-15T10:00:00.000Z')
 const EMPLOYEE_ID = 'emp-1'
@@ -27,22 +27,40 @@ function employee(overrides: Partial<EmployeeForUssd> = {}): EmployeeForUssd {
     full_name: 'Ama Boateng',
     is_active: true,
     ussd_pin_hash: 'hash-already-set',
+    monthly_salary_pesewas: 300_000 as MoneyPesewas,
+    start_date: '2026-01-01',
+    employer_pay_date: 25,
     ...overrides,
   }
 }
 
-const WELCOME_SESSION: UssdSession = {
-  step: 'welcome',
+function context(overrides: Partial<NewSessionContext> = {}): NewSessionContext {
+  return {
+    employee: employee(),
+    earned_wage_pesewas: 150_000 as MoneyPesewas,
+    max_advance_pesewas: 75_000 as MoneyPesewas,
+    ...overrides,
+  }
+}
+
+const BALANCE_SESSION: UssdSession = {
+  step: 'balance',
   started_at: NOW.toISOString(),
   employee_id: EMPLOYEE_ID,
+  full_name: 'Ama Boateng',
   is_first_use: false,
+  earned_wage_pesewas: 150_000 as MoneyPesewas,
+  max_advance_pesewas: 75_000 as MoneyPesewas,
 }
 
 const PIN_NEW_SESSION: UssdSession = {
   step: 'pin_setup_new',
   started_at: NOW.toISOString(),
   employee_id: EMPLOYEE_ID,
+  full_name: 'Ama Boateng',
   is_first_use: true,
+  earned_wage_pesewas: 150_000 as MoneyPesewas,
+  max_advance_pesewas: 75_000 as MoneyPesewas,
 }
 
 describe('handleCallback — session init', () => {
@@ -57,7 +75,7 @@ describe('handleCallback — session init', () => {
     const result = handleCallback(
       callback({ new: true }),
       null,
-      employee({ is_active: false }),
+      context({ employee: employee({ is_active: false }) }),
       NOW,
     )
     expect(result.response.reply).toBe(false)
@@ -69,7 +87,7 @@ describe('handleCallback — session init', () => {
     const result = handleCallback(
       callback({ new: true }),
       null,
-      employee({ ussd_pin_hash: null }),
+      context({ employee: employee({ ussd_pin_hash: null }) }),
       NOW,
     )
     expect(result.response.reply).toBe(true)
@@ -78,40 +96,51 @@ describe('handleCallback — session init', () => {
       step: 'pin_setup_new',
       employee_id: EMPLOYEE_ID,
       is_first_use: true,
+      earned_wage_pesewas: 150_000,
+      max_advance_pesewas: 75_000,
     })
   })
 
-  it('shows the welcome menu when the employee already has a PIN', () => {
-    const result = handleCallback(callback({ new: true }), null, employee(), NOW)
+  it('shows the balance screen when the employee already has a PIN', () => {
+    const result = handleCallback(callback({ new: true }), null, context(), NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('1) Check balance')
-    expect(result.nextSession).toMatchObject({ step: 'welcome', is_first_use: false })
+    expect(result.response.message).toContain('Hi Ama Boateng.')
+    expect(result.response.message).toContain('Earned: GHS 1,500.00')
+    expect(result.response.message).toContain('Max advance: GHS 750.00')
+    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.nextSession).toMatchObject({ step: 'balance', is_first_use: false })
+  })
+
+  it('ENDs with no-balance message when max_advance is zero', () => {
+    const result = handleCallback(
+      callback({ new: true }),
+      null,
+      context({ max_advance_pesewas: 0 as MoneyPesewas }),
+      NOW,
+    )
+    expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain('no advance available')
+    expect(result.nextSession).toBeNull()
   })
 
   it('treats a missing redis session the same as new', () => {
-    const result = handleCallback(callback({ new: false }), null, employee(), NOW)
-    expect(result.nextSession?.step).toBe('welcome')
+    const result = handleCallback(callback({ new: false }), null, context(), NOW)
+    expect(result.nextSession?.step).toBe('balance')
   })
 })
 
-describe('handleCallback — welcome menu', () => {
-  it('ends with the balance stub on 1', () => {
-    const result = handleCallback(callback({ message: '1' }), WELCOME_SESSION, null, NOW)
-    expect(result.response).toEqual({ message: 'Balance check coming soon.', reply: false })
+describe('handleCallback — balance step', () => {
+  it('ends with the amount stub on 1', () => {
+    const result = handleCallback(callback({ message: '1' }), BALANCE_SESSION, null, NOW)
+    expect(result.response).toEqual({ message: 'Amount step coming soon.', reply: false })
     expect(result.nextSession).toBeNull()
   })
 
-  it('ends with the advance stub on 2', () => {
-    const result = handleCallback(callback({ message: '2' }), WELCOME_SESSION, null, NOW)
-    expect(result.response.message).toContain('Advance request')
-    expect(result.nextSession).toBeNull()
-  })
-
-  it('re-prompts and keeps the session on invalid input', () => {
-    const result = handleCallback(callback({ message: '9' }), WELCOME_SESSION, null, NOW)
+  it('re-prompts on any other input and keeps the session', () => {
+    const result = handleCallback(callback({ message: '9' }), BALANCE_SESSION, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Invalid choice.')
-    expect(result.nextSession).toEqual(WELCOME_SESSION)
+    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.nextSession).toEqual(BALANCE_SESSION)
   })
 })
 
@@ -140,16 +169,38 @@ describe('handleCallback — pin setup', () => {
     expect(result.nextSession?.new_pin).toBeUndefined()
   })
 
-  it('emits a save_pin side effect and clears the session when PINs match', () => {
+  it('chains to the balance screen and emits save_pin when PINs match', () => {
     const confirmSession: UssdSession = {
       ...PIN_NEW_SESSION,
       step: 'pin_setup_confirm',
       new_pin: '1234',
     }
     const result = handleCallback(callback({ message: '1234' }), confirmSession, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Hi Ama Boateng.')
+    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.nextSession?.step).toBe('balance')
+    expect(result.nextSession?.new_pin).toBeUndefined()
+    expect(result.sideEffect).toEqual({
+      type: 'save_pin',
+      employeeId: EMPLOYEE_ID,
+      pin: '1234',
+    })
+  })
+
+  it('chains to no-balance END when PINs match but max_advance is zero', () => {
+    const confirmSession: UssdSession = {
+      ...PIN_NEW_SESSION,
+      step: 'pin_setup_confirm',
+      new_pin: '1234',
+      max_advance_pesewas: 0 as MoneyPesewas,
+    }
+    const result = handleCallback(callback({ message: '1234' }), confirmSession, null, NOW)
     expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('PIN set')
+    expect(result.response.message).toContain('no advance available')
     expect(result.nextSession).toBeNull()
+    // save_pin still fires — the worker did successfully set their PIN,
+    // even though they have nothing to draw against today.
     expect(result.sideEffect).toEqual({
       type: 'save_pin',
       employeeId: EMPLOYEE_ID,
