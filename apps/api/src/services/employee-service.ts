@@ -102,6 +102,7 @@ export interface EmployeeForUssd {
   id: string
   employer_id: string
   full_name: string
+  momo_number: string
   is_active: boolean
   ussd_pin_hash: string | null
   monthly_salary_pesewas: MoneyPesewas
@@ -113,6 +114,7 @@ interface EmployeeForUssdRow {
   id: string
   employer_id: string
   full_name: string
+  momo_number: string
   is_active: boolean
   ussd_pin_hash: string | null
   monthly_salary: number
@@ -126,7 +128,7 @@ export async function findEmployeeByMomoNumber(
   const { data, error } = await supabase
     .from('employees')
     .select(
-      'id, employer_id, full_name, is_active, ussd_pin_hash, monthly_salary, start_date, employers!inner(pay_date)',
+      'id, employer_id, full_name, momo_number, is_active, ussd_pin_hash, monthly_salary, start_date, employers!inner(pay_date)',
     )
     .eq('momo_number', momoNumber)
     .maybeSingle<EmployeeForUssdRow>()
@@ -150,6 +152,7 @@ function rowToEmployeeForUssd(row: EmployeeForUssdRow): EmployeeForUssd {
     id: row.id,
     employer_id: row.employer_id,
     full_name: row.full_name,
+    momo_number: row.momo_number,
     is_active: row.is_active,
     ussd_pin_hash: row.ussd_pin_hash,
     monthly_salary_pesewas: Math.round(row.monthly_salary * PESEWAS_PER_CEDI) as MoneyPesewas,

@@ -7,6 +7,7 @@ import {
   parseGhs,
 } from '@wagr/types'
 import type { EmployeeForUssd } from '../services/employee-service'
+import { calculateFee } from './wage-engine/fee'
 
 // Pure step handler. The controller does the I/O — Redis read/write,
 // employee lookup, wage pre-computation, bcrypt + DB save for the PIN.
@@ -49,7 +50,8 @@ const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
 const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
 const AMOUNT_INVALID = 'Enter a whole cedi amount, e.g. 100.'
 const AMOUNT_TOO_LOW = `Minimum advance is ${formatGhs(MIN_ADVANCE_PESEWAS)}.`
-const CONFIRM_STEP_STUB = 'Confirm step coming soon.'
+const CANCELLED = 'Cancelled. No advance created.'
+const PIN_STEP_STUB = 'PIN step coming soon.'
 const SESSION_ERROR = 'Session error. Please dial again.'
 
 export function handleCallback(
@@ -71,6 +73,8 @@ export function handleCallback(
       return handleBalance(callback.message, currentSession)
     case 'amount':
       return handleAmount(callback.message, currentSession)
+    case 'confirm':
+      return handleConfirm(callback.message, currentSession)
     default:
       return { response: end(SESSION_ERROR), nextSession: null }
   }
@@ -88,6 +92,7 @@ function initSession(context: NewSessionContext | null, now: Date): FlowResult {
     started_at: now.toISOString(),
     employee_id: context.employee.id,
     full_name: context.employee.full_name,
+    momo_number: context.employee.momo_number,
     earned_wage_pesewas: context.earned_wage_pesewas,
     max_advance_pesewas: context.max_advance_pesewas,
   }
@@ -160,10 +165,29 @@ function handleAmount(message: string, session: UssdSession): FlowResult {
     return { response: reply(amountError(aboveCap, session)), nextSession: session }
   }
 
-  // Valid amount accepted. The confirm step ([ussd-confirm-step]) will pick
-  // this up next and show the fee/net breakdown — for now we END so the
-  // worker isn't stranded mid-session.
-  return { response: end(CONFIRM_STEP_STUB), nextSession: null }
+  const { fee, net } = calculateFee(requested as MoneyPesewas)
+  const nextSession: UssdSession = {
+    ...session,
+    step: 'confirm',
+    requested_amount_pesewas: requested as MoneyPesewas,
+    fee_pesewas: fee,
+    net_disbursement_pesewas: net,
+  }
+  return { response: reply(confirmScreen(nextSession)), nextSession }
+}
+
+function handleConfirm(message: string, session: UssdSession): FlowResult {
+  if (message === '1') {
+    // PIN step ([ussd-pin-step]) will replace this stub. Keep the session
+    // around with confirm in case the user navigates back.
+    return { response: end(PIN_STEP_STUB), nextSession: null }
+  }
+  if (message === '2') {
+    return { response: end(CANCELLED), nextSession: null }
+  }
+  // Anything else — re-show the confirm screen rather than killing the
+  // session on a typo.
+  return { response: reply(confirmScreen(session)), nextSession: session }
 }
 
 // Entry into the balance step — handles the "no cap available" END case
@@ -192,6 +216,21 @@ function amountPrompt(maxAdvancePesewas: MoneyPesewas): string {
 
 function amountError(reason: string, session: UssdSession): string {
   return `${reason}\n${amountPrompt(session.max_advance_pesewas)}`
+}
+
+function confirmScreen(session: UssdSession): string {
+  // Guarded by the state machine — the confirm step is only entered after
+  // handleAmount sets these three fields. If a stale Redis blob ever
+  // bypasses that, we'd rather render zeros than crash on the worker.
+  const requested = session.requested_amount_pesewas ?? 0
+  const fee = session.fee_pesewas ?? 0
+  const net = session.net_disbursement_pesewas ?? 0
+  return [
+    `Confirm: ${formatGhs(requested)}`,
+    `Fee: ${formatGhs(fee)}`,
+    `You receive: ${formatGhs(net)} to ${session.momo_number}`,
+    '1=Confirm 2=Cancel',
+  ].join('\n')
 }
 
 function reply(message: string): UssdResponse {

@@ -25,6 +25,7 @@ function employee(overrides: Partial<EmployeeForUssd> = {}): EmployeeForUssd {
     id: EMPLOYEE_ID,
     employer_id: EMPLOYER_ID,
     full_name: 'Ama Boateng',
+    momo_number: '0241235993',
     is_active: true,
     ussd_pin_hash: 'hash-already-set',
     monthly_salary_pesewas: 300_000 as MoneyPesewas,
@@ -48,6 +49,7 @@ const BALANCE_SESSION: UssdSession = {
   started_at: NOW.toISOString(),
   employee_id: EMPLOYEE_ID,
   full_name: 'Ama Boateng',
+  momo_number: '0241235993',
   is_first_use: false,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
@@ -58,6 +60,7 @@ const AMOUNT_SESSION: UssdSession = {
   started_at: NOW.toISOString(),
   employee_id: EMPLOYEE_ID,
   full_name: 'Ama Boateng',
+  momo_number: '0241235993',
   is_first_use: false,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
@@ -68,6 +71,7 @@ const PIN_NEW_SESSION: UssdSession = {
   started_at: NOW.toISOString(),
   employee_id: EMPLOYEE_ID,
   full_name: 'Ama Boateng',
+  momo_number: '0241235993',
   is_first_use: true,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
@@ -185,24 +189,76 @@ describe('handleCallback — amount step', () => {
     expect(result.nextSession).toEqual(AMOUNT_SESSION)
   })
 
-  it('accepts the GHS 50 floor exactly', () => {
+  it('accepts the GHS 50 floor exactly and transitions to confirm', () => {
     const result = handleCallback(callback({ message: '50' }), AMOUNT_SESSION, null, NOW)
-    expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('Confirm step coming soon')
-    expect(result.nextSession).toBeNull()
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Confirm: GHS 50.00')
+    expect(result.nextSession).toMatchObject({
+      step: 'confirm',
+      requested_amount_pesewas: 5_000,
+      fee_pesewas: 150,
+      net_disbursement_pesewas: 4_850,
+    })
   })
 
   it('accepts the max cap exactly', () => {
     const result = handleCallback(callback({ message: '750' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.nextSession?.step).toBe('confirm')
+    expect(result.nextSession?.requested_amount_pesewas).toBe(75_000)
+  })
+
+  it('shows the full breakdown on a valid mid-range amount', () => {
+    const result = handleCallback(callback({ message: '200' }), AMOUNT_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Confirm: GHS 200.00')
+    expect(result.response.message).toContain('Fee: GHS 6.00')
+    expect(result.response.message).toContain('You receive: GHS 194.00 to 0241235993')
+    expect(result.response.message).toContain('1=Confirm 2=Cancel')
+    expect(result.nextSession).toMatchObject({
+      step: 'confirm',
+      requested_amount_pesewas: 20_000,
+      fee_pesewas: 600,
+      net_disbursement_pesewas: 19_400,
+    })
+  })
+})
+
+describe('handleCallback — confirm step', () => {
+  const CONFIRM_SESSION: UssdSession = {
+    step: 'confirm',
+    started_at: NOW.toISOString(),
+    employee_id: EMPLOYEE_ID,
+    full_name: 'Ama Boateng',
+    momo_number: '0241235993',
+    is_first_use: false,
+    earned_wage_pesewas: 150_000 as MoneyPesewas,
+    max_advance_pesewas: 75_000 as MoneyPesewas,
+    requested_amount_pesewas: 20_000 as MoneyPesewas,
+    fee_pesewas: 600 as MoneyPesewas,
+    net_disbursement_pesewas: 19_400 as MoneyPesewas,
+  }
+
+  it('ends with the PIN step stub on 1', () => {
+    const result = handleCallback(callback({ message: '1' }), CONFIRM_SESSION, null, NOW)
     expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain('PIN step coming soon')
     expect(result.nextSession).toBeNull()
   })
 
-  it('accepts a valid mid-range amount', () => {
-    const result = handleCallback(callback({ message: '200' }), AMOUNT_SESSION, null, NOW)
+  it('ends with the cancellation message on 2', () => {
+    const result = handleCallback(callback({ message: '2' }), CONFIRM_SESSION, null, NOW)
     expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('Confirm step coming soon')
+    expect(result.response.message).toContain('Cancelled')
     expect(result.nextSession).toBeNull()
+  })
+
+  it('re-shows the confirm screen on any other input', () => {
+    const result = handleCallback(callback({ message: '7' }), CONFIRM_SESSION, null, NOW)
+    expect(result.response.reply).toBe(true)
+    expect(result.response.message).toContain('Confirm: GHS 200.00')
+    expect(result.response.message).toContain('1=Confirm 2=Cancel')
+    expect(result.nextSession).toEqual(CONFIRM_SESSION)
   })
 })
 
