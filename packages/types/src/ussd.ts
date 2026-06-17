@@ -43,4 +43,4 @@ export interface UssdSession {
   new_pin?: string
 }
 
-export type UssdStep = 'balance' | 'pin_setup_new' | 'pin_setup_confirm'
+export type UssdStep = 'balance' | 'pin_setup_new' | 'pin_setup_confirm' | 'amount'

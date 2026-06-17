@@ -4,6 +4,7 @@ import {
   type UssdResponse,
   type UssdSession,
   formatGhs,
+  parseGhs,
 } from '@wagr/types'
 import type { EmployeeForUssd } from '../services/employee-service'
 
@@ -35,6 +36,10 @@ export interface FlowResult {
 
 const PIN_REGEX = /^\d{4}$/
 
+// GHS 50 floor — the flat GHS 10 fee would otherwise exceed 20% of the
+// requested amount on advances smaller than this. See fee.ts.
+const MIN_ADVANCE_PESEWAS: MoneyPesewas = 5_000
+
 const NOT_REGISTERED = 'Number not registered on Wagr. Contact your employer.'
 const DEACTIVATED = 'Your access has been deactivated. Contact your employer.'
 const PIN_SETUP_PROMPT = 'Welcome to Wagr.\nPlease set a 4-digit PIN:'
@@ -42,7 +47,9 @@ const PIN_CONFIRM_PROMPT = 'Re-enter your PIN to confirm:'
 const PIN_INVALID = 'PIN must be 4 digits. Try again:'
 const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
 const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
-const AMOUNT_STEP_STUB = 'Amount step coming soon.'
+const AMOUNT_INVALID = 'Enter a whole cedi amount, e.g. 100.'
+const AMOUNT_TOO_LOW = `Minimum advance is ${formatGhs(MIN_ADVANCE_PESEWAS)}.`
+const CONFIRM_STEP_STUB = 'Confirm step coming soon.'
 const SESSION_ERROR = 'Session error. Please dial again.'
 
 export function handleCallback(
@@ -62,6 +69,8 @@ export function handleCallback(
       return handlePinSetupConfirm(callback.message, currentSession)
     case 'balance':
       return handleBalance(callback.message, currentSession)
+    case 'amount':
+      return handleAmount(callback.message, currentSession)
     default:
       return { response: end(SESSION_ERROR), nextSession: null }
   }
@@ -128,11 +137,33 @@ function handlePinSetupConfirm(message: string, session: UssdSession): FlowResul
 
 function handleBalance(message: string, session: UssdSession): FlowResult {
   if (message === '1') {
-    return { response: end(AMOUNT_STEP_STUB), nextSession: null }
+    return {
+      response: reply(amountPrompt(session.max_advance_pesewas)),
+      nextSession: { ...session, step: 'amount' },
+    }
   }
   // Anything else — show the balance again with the prompt. Keeps the
   // session open so a fat-fingered keypress doesn't kill the flow.
   return { response: reply(balanceScreen(session)), nextSession: session }
+}
+
+function handleAmount(message: string, session: UssdSession): FlowResult {
+  const requested = parseGhs(message)
+  if (requested === null || requested <= 0) {
+    return { response: reply(amountError(AMOUNT_INVALID, session)), nextSession: session }
+  }
+  if (requested < MIN_ADVANCE_PESEWAS) {
+    return { response: reply(amountError(AMOUNT_TOO_LOW, session)), nextSession: session }
+  }
+  if (requested > session.max_advance_pesewas) {
+    const aboveCap = `Max advance is ${formatGhs(session.max_advance_pesewas)}.`
+    return { response: reply(amountError(aboveCap, session)), nextSession: session }
+  }
+
+  // Valid amount accepted. The confirm step ([ussd-confirm-step]) will pick
+  // this up next and show the fee/net breakdown — for now we END so the
+  // worker isn't stranded mid-session.
+  return { response: end(CONFIRM_STEP_STUB), nextSession: null }
 }
 
 // Entry into the balance step — handles the "no cap available" END case
@@ -153,6 +184,14 @@ function balanceScreen(session: UssdSession): string {
     `Max advance: ${formatGhs(session.max_advance_pesewas)}.`,
     'Press 1 to continue.',
   ].join('\n')
+}
+
+function amountPrompt(maxAdvancePesewas: MoneyPesewas): string {
+  return `Enter amount (max ${formatGhs(maxAdvancePesewas)}):`
+}
+
+function amountError(reason: string, session: UssdSession): string {
+  return `${reason}\n${amountPrompt(session.max_advance_pesewas)}`
 }
 
 function reply(message: string): UssdResponse {
