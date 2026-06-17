@@ -38,19 +38,27 @@ doubt, check the source.
 
 Header-based API keys. Different endpoints need different combinations.
 
-| Header | What it is | Used for |
+| Header | Scope | Used for |
 |---|---|---|
-| `X-API-USER` | Moolre username | Required on every endpoint |
-| `X-API-KEY` | Private key | Transfers (initiating), Account Status |
-| `X-API-PUBKEY` | Public key | Payments (initiating) |
-| `X-API-VASKEY` | Value-added services key | SMS, WhatsApp |
+| `X-API-USER` | Account | Required on every endpoint |
+| `X-API-KEY` | Account (private) | Transfers (initiating), Account Status |
+| `X-API-PUBKEY` | Account (public) | Payments (initiating) |
+| `X-API-VASKEY` | **Per service** | SMS Send, WhatsApp Send — each service instance has its own VAS key |
 
-The repo's `apps/api/.env` therefore needs four secrets, not one:
+**VAS keys are NOT one shared key.** Each service you create in the Moolre
+dashboard (one SMS Service, one WhatsApp Service) gets its own VAS key. They
+both go in the same `X-API-VASKEY` header but with different values depending
+on which API you're calling. The SMS endpoint expects the SMS service's key;
+the WhatsApp endpoint expects the WhatsApp service's key.
+
+The repo's `apps/api/.env` therefore needs:
 ```
-MOOLRE_API_USER=...
-MOOLRE_API_KEY=...
-MOOLRE_API_PUBKEY=...
-MOOLRE_API_VASKEY=...
+MOOLRE_API_USER=...           # account-level
+MOOLRE_API_KEY=...            # account-level (private)
+MOOLRE_API_PUBKEY=...         # account-level (public)
+MOOLRE_SMS_VASKEY=...         # SMS service instance
+MOOLRE_WHATSAPP_VASKEY=...    # WhatsApp service instance
+MOOLRE_ACCOUNT_NUMBER=...
 ```
 
 ## Naming mismatches with the repo

@@ -166,6 +166,7 @@ async function runDisbursement(
     advance = await createAdvanceRequest({
       employeeId: sideEffect.employeeId,
       employerId: sideEffect.employerId,
+      momoNumber: sideEffect.momoNumber,
       requestedPesewas: sideEffect.requestedAmountPesewas,
       feePesewas: sideEffect.feePesewas,
       netPesewas: sideEffect.netDisbursementPesewas,

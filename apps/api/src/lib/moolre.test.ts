@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../errors/app-error'
-import { getTransferStatus, initiateTransfer } from './moolre'
+import { getTransferStatus, initiateTransfer, sendSms } from './moolre'
 
 // We mock global fetch so this file doesn't talk to Moolre. Env is set in
 // vitest's setup; if MOOLRE_BASE_URL/credentials aren't present these tests
@@ -146,6 +146,54 @@ describe('getTransferStatus', () => {
     const result = await getTransferStatus('wagr-adv-abc')
     expect(result.txStatus).toBe(2)
     expect(result.failureReason).toBe('Wrong number')
+  })
+})
+
+describe('sendSms', () => {
+  const SMS_ENVELOPE = {
+    status: 1,
+    code: 'SMS01',
+    message: 'Queued',
+    data: { ref: 'r1' },
+  }
+
+  it('posts to /open/sms/send with X-API-VASKEY and the Wagr sender id', async () => {
+    const fetchMock = mockFetchOnce(SMS_ENVELOPE)
+
+    await sendSms({ to: '0241235993', message: 'Hi Ama' })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/open\/sms\/send$/)
+    expect(init.method).toBe('POST')
+
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-API-USER']).toBeTruthy()
+    expect(headers['X-API-VASKEY']).toBeTruthy()
+    // Account-level Transfers key MUST NOT leak into the SMS request.
+    expect(headers['X-API-KEY']).toBeUndefined()
+
+    const body = JSON.parse(init.body as string)
+    expect(body).toMatchObject({
+      type: 1,
+      senderid: 'Wagr',
+      messages: [{ recipient: '0241235993', message: 'Hi Ama' }],
+    })
+    // ref is optional — when not provided, it should NOT be in the body.
+    expect(body.messages[0].ref).toBeUndefined()
+  })
+
+  it('passes ref through when provided', async () => {
+    mockFetchOnce(SMS_ENVELOPE)
+    await sendSms({ to: '0241235993', message: 'Hi', ref: 'adv-123' })
+    const fetchSpy = global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }
+    const body = JSON.parse((fetchSpy.mock.calls.at(-1)?.[1].body as string) ?? '{}')
+    expect(body.messages[0].ref).toBe('adv-123')
+  })
+
+  it('throws AppError on a non-OK HTTP response', async () => {
+    mockFetchOnce({ status: 0, code: 'SMS99', message: 'no credits' }, { ok: false, status: 500 })
+    await expect(sendSms({ to: '0241235993', message: 'Hi' })).rejects.toBeInstanceOf(AppError)
   })
 })
 
