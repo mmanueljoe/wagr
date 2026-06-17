@@ -1,4 +1,4 @@
-import { type MoneyPesewas, msisdnToLocal } from '@wagr/types'
+import { type MoneyPesewas, type UssdSession, msisdnToLocal } from '@wagr/types'
 import bcrypt from 'bcrypt'
 import type { Request, Response } from 'express'
 import { logger } from '../lib/logger'
@@ -14,6 +14,7 @@ import {
 } from '../services/employee-service'
 
 const BCRYPT_ROUNDS = 12
+const PIN_REGEX = /^\d{4}$/
 
 export async function ussdCallbackHandler(req: Request, res: Response) {
   const callback = req.body
@@ -31,7 +32,23 @@ export async function ussdCallbackHandler(req: Request, res: Response) {
   // 5-second Moolre budget comfortable.
   const context = isNewSession ? await buildNewSessionContext(callback.msisdn, now) : null
 
-  const result = handleCallback(callback, currentSession, context, now)
+  // bcrypt.compare runs at the controller layer so the flow module stays
+  // sync + pure. Null for anything that isn't a 4-digit PIN landing on
+  // pin_entry.
+  const pinVerified = await maybeVerifyPin(callback.message, currentSession)
+
+  const result = handleCallback(callback, currentSession, context, pinVerified, now)
+
+  // Bcrypt the new PIN BEFORE writing the session so that same-session
+  // chains (pin_setup → balance → … → pin_entry) carry the hash for the
+  // verify step. The DB save still happens via runSideEffect.
+  const savedPinHash =
+    result.sideEffect?.type === 'save_pin'
+      ? await bcrypt.hash(result.sideEffect.pin, BCRYPT_ROUNDS)
+      : null
+  if (savedPinHash && result.nextSession) {
+    result.nextSession.ussd_pin_hash = savedPinHash
+  }
 
   if (result.nextSession === null) {
     await deleteSession(callback.sessionId)
@@ -39,9 +56,19 @@ export async function ussdCallbackHandler(req: Request, res: Response) {
     await setSession(callback.sessionId, result.nextSession)
   }
 
-  await runSideEffect(result)
+  await runSideEffect(result, savedPinHash)
 
   res.json(result.response)
+}
+
+async function maybeVerifyPin(
+  message: string,
+  session: UssdSession | null,
+): Promise<boolean | null> {
+  if (!session || session?.step !== 'pin_entry') return null
+  if (!session.ussd_pin_hash) return null
+  if (!PIN_REGEX.test(message)) return null
+  return bcrypt.compare(message, session.ussd_pin_hash)
 }
 
 async function buildNewSessionContext(
@@ -88,10 +115,29 @@ function zeroContext(employee: EmployeeForUssd): NewSessionContext {
   }
 }
 
-async function runSideEffect(result: FlowResult): Promise<void> {
+async function runSideEffect(result: FlowResult, savedPinHash: string | null): Promise<void> {
   if (!result.sideEffect) return
   if (result.sideEffect.type === 'save_pin') {
-    const hash = await bcrypt.hash(result.sideEffect.pin, BCRYPT_ROUNDS)
-    await setEmployeePinHash(result.sideEffect.employeeId, hash)
+    // Hash was already computed before the session write so pin_entry can
+    // verify within the same session — reuse it for the DB save.
+    if (savedPinHash === null) return
+    await setEmployeePinHash(result.sideEffect.employeeId, savedPinHash)
+    return
+  }
+  if (result.sideEffect.type === 'disburse') {
+    // STUB — [moolre-disbursement] will replace this with the advance_request
+    // DB insert + Moolre Transfers call. Logging at info so the demo flow
+    // is observable end-to-end until that slug lands.
+    logger.info(
+      {
+        employeeId: result.sideEffect.employeeId,
+        employerId: result.sideEffect.employerId,
+        requestedPesewas: result.sideEffect.requestedAmountPesewas,
+        feePesewas: result.sideEffect.feePesewas,
+        netPesewas: result.sideEffect.netDisbursementPesewas,
+      },
+      'advance approved — disbursement pending [moolre-disbursement]',
+    )
+    return
   }
 }
