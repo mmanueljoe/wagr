@@ -1,7 +1,20 @@
-import type { FundFloatInput, FundFloatResponse } from '@wagr/types'
+import type { FloatStatusResponse, FundFloatInput, FundFloatResponse } from '@wagr/types'
 import type { Request, Response } from 'express'
 import { AppError } from '../errors/app-error'
-import { initiateFloatTopUp } from '../services/float-funding-service'
+import { getFloatStatus, initiateFloatTopUp } from '../services/float-funding-service'
+
+export async function getFloatStatusHandler(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
+
+  const status = await getFloatStatus(req.user.employer_id)
+  const response: FloatStatusResponse = {
+    balance_pesewas: status.balancePesewas,
+    momo_number: status.momoNumber,
+    network: status.network,
+    has_pending_top_up: status.hasPendingTopUp,
+  }
+  res.json(response)
+}
 
 export async function fundFloatHandler(req: Request, res: Response): Promise<void> {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
