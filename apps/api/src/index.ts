@@ -6,8 +6,10 @@ import { logger } from './lib/logger'
 import { errorHandler } from './middleware/error-handler'
 import { authRouter } from './routes/auth'
 import { employeesRouter } from './routes/employees'
+import { floatRouter } from './routes/float'
 import { healthRouter } from './routes/health'
 import { ussdRouter } from './routes/ussd'
+import { webhooksRouter } from './routes/webhooks'
 
 const app = express()
 
@@ -20,7 +22,9 @@ app.use(cookieParser())
 app.use(healthRouter)
 app.use(authRouter)
 app.use(employeesRouter)
+app.use(floatRouter)
 app.use(ussdRouter)
+app.use(webhooksRouter)
 
 app.use(errorHandler)
 

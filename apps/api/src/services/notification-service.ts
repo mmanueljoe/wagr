@@ -40,6 +40,26 @@ export async function notifyAdvanceFailed(input: AdvanceFailedInput): Promise<vo
   await safeSend(input.momoNumber, message, 'advance_failed')
 }
 
+export interface FloatFundedInput {
+  phone: string
+  amountPesewas: MoneyPesewas
+}
+
+export interface FloatFundingFailedInput {
+  phone: string
+  amountPesewas: MoneyPesewas
+}
+
+export async function notifyFloatFunded(input: FloatFundedInput): Promise<void> {
+  const message = `Your Wagr float has been funded with ${formatGhs(input.amountPesewas)}. Workers can now request advances.`
+  await safeSend(input.phone, message, 'float_funded')
+}
+
+export async function notifyFloatFundingFailed(input: FloatFundingFailedInput): Promise<void> {
+  const message = `Your Wagr float top-up of ${formatGhs(input.amountPesewas)} could not be processed. Please try again or contact support.`
+  await safeSend(input.phone, message, 'float_funding_failed')
+}
+
 async function safeSend(to: string, message: string, context: string): Promise<void> {
   try {
     await sendSms({ to, message })

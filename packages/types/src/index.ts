@@ -1,5 +1,6 @@
 export * from './auth'
 export * from './employee'
+export * from './float'
 export * from './money'
 export * from './phone'
 export * from './ussd'

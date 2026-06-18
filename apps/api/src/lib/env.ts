@@ -25,7 +25,10 @@ export const env = createEnv({
     MOOLRE_SMS_VASKEY: z.string().min(1),
     MOOLRE_WHATSAPP_VASKEY: z.string().min(1),
     MOOLRE_ACCOUNT_NUMBER: z.string().min(1),
-    MOOLRE_USSD_SECRET: z.string().min(1),
+    // Returned by Moolre when we POST /open/account/update with our callback
+    // URL. Every webhook from Moolre includes this in the payload's `secret`
+    // field — we verify on every incoming request.
+    MOOLRE_WEBHOOK_SECRET: z.string().min(1),
 
     OPENAI_API_KEY: z.string().min(1),
 
