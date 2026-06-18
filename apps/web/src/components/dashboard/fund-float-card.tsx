@@ -14,7 +14,7 @@ import { useFloat } from '@/hooks/use-float'
 import { useFundFloat } from '@/hooks/use-fund-float'
 import { EMPLOYEE_NETWORKS, type EmployeeNetwork, formatGhs, parseGhs } from '@wagr/types'
 import { Loader2, Wallet } from 'lucide-react'
-import { useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { toast } from 'sonner'
 
 const NETWORK_LABELS: Record<EmployeeNetwork, string> = {
@@ -59,7 +59,7 @@ export function FundFloatCard() {
     setExpanded(false)
   }
 
-  function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault()
     setFormError(null)
 

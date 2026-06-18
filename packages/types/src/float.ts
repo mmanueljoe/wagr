@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { EMPLOYEE_NETWORKS, GH_MOMO_REGEX } from './employee'
+import type { MoneyPesewas } from './money'
 
 // Body for POST /float/fund. `momo_number` + `network` are only required the
 // first time an employer tops up (when their employer row hasn't captured
@@ -18,7 +19,7 @@ export type FundFloatInput = z.infer<typeof fundFloatSchema>
 export interface FundFloatResponse {
   top_up_id: string
   external_ref: string
-  amount_pesewas: number
+  amount_pesewas: MoneyPesewas
   // Hint for the UI — true means the worker's phone should show a MoMo PIN
   // prompt shortly. Final outcome arrives via webhook; the UI polls the
   // float balance to detect terminal state.
@@ -26,7 +27,7 @@ export interface FundFloatResponse {
 }
 
 export interface FloatStatusResponse {
-  balance_pesewas: number
+  balance_pesewas: MoneyPesewas
   // null if the employer hasn't set their payment details yet — the Fund
   // Float dialog asks for them on first use.
   momo_number: string | null
