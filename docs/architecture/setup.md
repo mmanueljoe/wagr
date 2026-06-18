@@ -14,7 +14,7 @@ Install these before starting:
 - A Supabase account (free at supabase.com)
 - An Upstash account (free at upstash.com)
 - A Moolre sandbox account (register at docs.moolre.com)
-- An OpenAI account with API access (platform.openai.com)
+- A Google AI Studio API key for Gemini (free at aistudio.google.com — no credit card)
 - Postman or Bruno for API testing
 
 ---
@@ -63,8 +63,8 @@ MOOLRE_WHATSAPP_VASKEY=your-whatsapp-service-vas-key  # WhatsApp service instanc
 MOOLRE_ACCOUNT_NUMBER=your-moolre-account-number
 MOOLRE_WEBHOOK_SECRET=your-account-secret  # Verifies webhook authenticity
 
-# OpenAI
-OPENAI_API_KEY=your-openai-key
+# Generative AI (Gemini Flash — free tier, no card required)
+GEMINI_API_KEY=your-gemini-api-key
 
 # App
 API_URL=http://localhost:3001

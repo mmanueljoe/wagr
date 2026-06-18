@@ -9,7 +9,9 @@
 
 ## Overview
 
-Wagr uses OpenAI GPT-4o for two practical features: producing a friendly personalised closing line on each WhatsApp payslip, and producing plain-English explanations of credit scoring flags. Both features use constrained prompts with structured inputs and validated outputs. Neither requires a custom model or fine-tuning.
+Wagr uses a generative LLM for two practical features: producing a friendly personalised closing line on each WhatsApp payslip, and producing plain-English explanations of credit scoring flags. Both features use constrained prompts with structured inputs and validated outputs. Neither requires a custom model or fine-tuning.
+
+**Provider note**: this spec was originally written against OpenAI's GPT-4o. The current implementation uses **Google Gemini Flash** instead — same constraints, same outputs, free-tier-friendly. References to "GPT-4o" below describe the original intent; "the LLM" applies regardless of provider. Swapping providers is a one-file change in `apps/api/src/lib/payslip-gpt.ts` because the rest of the codebase only sees the constrained function output.
 
 The AI features must be demonstrable on judging day. They are not decorative — both produce visible output that judges and users can read.
 
