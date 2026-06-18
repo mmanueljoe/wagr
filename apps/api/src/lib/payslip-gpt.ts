@@ -1,4 +1,3 @@
-import { type MoneyPesewas, formatGhs } from '@wagr/types'
 import { env } from './env'
 import { logger } from './logger'
 
@@ -7,8 +6,10 @@ import { logger } from './logger'
 //
 // Every other piece of the payslip — gross / advances / net amounts, worker
 // name, period — is deterministic from the wage engine. The LLM is only
-// trusted to write a short, warm sentence. It never sees the actual GHS
-// figures, so it can't get them wrong.
+// trusted to write a short, warm sentence. We deliberately send the LLM the
+// MINIMUM needed for tone (first name + pay period). Salary figures stay on
+// our side per CLAUDE.md's "never log salary" rule — third-party APIs count
+// as a logging surface.
 //
 // Currently calls Google's Gemini Flash via REST (no SDK — keeps the
 // dependency surface small). To swap providers, only this file changes.
@@ -25,12 +26,6 @@ const FALLBACK_CLOSING_LINE = 'Thank you for your work this month.'
 export interface PayslipClosingInput {
   workerFirstName: string
   payPeriodLabel: string // e.g. "November 2026"
-  // Carried for prompt context only — the LLM is instructed NOT to mention
-  // numbers. We pass the formatted strings rather than raw pesewas so a
-  // future iteration can include the period summary without arithmetic.
-  grossPesewas: MoneyPesewas
-  advancesPesewas: MoneyPesewas
-  netPesewas: MoneyPesewas
 }
 
 export async function generatePayslipClosingLine(input: PayslipClosingInput): Promise<string> {
@@ -55,10 +50,6 @@ export async function generatePayslipClosingLine(input: PayslipClosingInput): Pr
 }
 
 function buildPrompt(input: PayslipClosingInput): string {
-  // The numeric fields are present in the prompt for *context only* — the
-  // model is explicitly told not to mention amounts. Including them helps
-  // tone (a worker with zero advances vs many advances gets a subtly
-  // different closing) without ever risking a wrong number reaching them.
   return [
     "You write a single short warm closing line for a Ghanaian worker's payslip.",
     '',
@@ -71,12 +62,9 @@ function buildPrompt(input: PayslipClosingInput): string {
     '- DO NOT include emoji.',
     '- DO NOT say "Wagr" — the template already signs off.',
     '',
-    'WORKER CONTEXT (for tone only, never to be repeated back):',
+    'WORKER CONTEXT:',
     `- First name: ${input.workerFirstName}`,
     `- Pay period: ${input.payPeriodLabel}`,
-    `- Gross: ${formatGhs(input.grossPesewas)}`,
-    `- Advances taken this period: ${formatGhs(input.advancesPesewas)}`,
-    `- Net being paid today: ${formatGhs(input.netPesewas)}`,
     '',
     'Closing line:',
   ].join('\n')
@@ -94,9 +82,15 @@ async function callGemini(prompt: string): Promise<string> {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const res = await fetch(`${GEMINI_ENDPOINT}?key=${env.GEMINI_API_KEY}`, {
+    // API key goes in the x-goog-api-key header, NOT the URL query string.
+    // URLs end up in logs / proxies / telemetry — headers don't (usually).
+    // Per Google's docs both auth modes are supported; header is the safe one.
+    const res = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': env.GEMINI_API_KEY,
+      },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {

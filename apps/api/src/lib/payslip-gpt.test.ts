@@ -1,4 +1,3 @@
-import type { MoneyPesewas } from '@wagr/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { generatePayslipClosingLine } from './payslip-gpt'
 
@@ -21,9 +20,6 @@ function mockFetchOnce(json: unknown, init: { ok?: boolean; status?: number } = 
 const INPUT = {
   workerFirstName: 'Ama',
   payPeriodLabel: 'November 2026',
-  grossPesewas: 250_000 as MoneyPesewas,
-  advancesPesewas: 40_000 as MoneyPesewas,
-  netPesewas: 210_000 as MoneyPesewas,
 }
 
 beforeEach(() => {
@@ -43,22 +39,43 @@ describe('generatePayslipClosingLine', () => {
     expect(result).toBe('Great month, Ama — your discipline really shows.')
   })
 
-  it('sends the prompt as Gemini-shaped contents to the right endpoint', async () => {
+  it('sends the prompt to Gemini with the API key in the header (not the URL)', async () => {
     const fetchMock = mockFetchOnce(geminiResponse('Take care, Ama.'))
 
     await generatePayslipClosingLine(INPUT)
 
     expect(fetchMock).toHaveBeenCalledOnce()
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toMatch(/generativelanguage\.googleapis\.com.*generateContent\?key=/)
+    // URL is clean — no `?key=` query string. URLs land in logs/proxies;
+    // keeping the secret out of the URL keeps it out of those surfaces.
+    expect(url).toMatch(/generativelanguage\.googleapis\.com.*generateContent$/)
+    expect(url).not.toContain('key=')
+
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-goog-api-key']).toBeTruthy()
     expect(init.method).toBe('POST')
 
     const body = JSON.parse(init.body as string)
     expect(body.contents[0].parts[0].text).toContain('Ama')
     expect(body.contents[0].parts[0].text).toContain('November 2026')
-    // The prompt MUST tell the model not to repeat numbers — this is the
-    // safety rail that stops it surfacing inaccurate amounts to workers.
+    // The prompt MUST tell the model not to mention numbers — even though
+    // we're no longer sending amounts, this rail stops the model from
+    // inventing or fishing for figures from its context.
     expect(body.contents[0].parts[0].text).toMatch(/DO NOT mention any specific GHS amounts/i)
+  })
+
+  it('does NOT send salary figures into the prompt', async () => {
+    const fetchMock = mockFetchOnce(geminiResponse('Take care, Ama.'))
+
+    await generatePayslipClosingLine(INPUT)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const prompt = JSON.parse(init.body as string).contents[0].parts[0].text as string
+    // Salary data must never reach Google's servers (CLAUDE.md: never log
+    // salary; third-party APIs are a logging surface).
+    expect(prompt).not.toMatch(/GHS\s*[\d,]+\.\d{2}/)
+    expect(prompt).not.toMatch(/gross/i)
+    expect(prompt).not.toMatch(/net being paid/i)
   })
 
   it('strips surrounding quotes that the model sometimes adds', async () => {
