@@ -17,6 +17,7 @@ export type Network = 'mtn' | 'telecel' | 'at'
 // Moolre uses different integer codes for the same network depending on the
 // endpoint — easy to get wrong. See docs/architecture/moolre-api-reference.md.
 const TRANSFER_CHANNEL: Record<Network, number> = { mtn: 1, telecel: 6, at: 7 }
+const PAYMENT_CHANNEL: Record<Network, number> = { mtn: 13, telecel: 6, at: 7 }
 
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -104,6 +105,45 @@ export async function getTransferStatus(externalRef: string): Promise<TransferSt
     transactionId: parseTransactionId(response.data?.transactionid),
     externalRef,
     failureReason: typeof response.message === 'string' ? response.message : null,
+  }
+}
+
+// ── Initiate Payment (Collections / float funding + payday recovery) ─────
+
+export interface InitiatePaymentInput {
+  amount: number // Cedis.
+  payer: string // Employer's MoMo number (local format, e.g. 0241235993).
+  network: Network
+  externalRef: string // Idempotency key — same ref never charges twice.
+}
+
+export interface InitiatePaymentResult {
+  acknowledged: boolean // True when Moolre accepted the request and sent the
+  // PIN prompt to the payer's phone. Final result arrives via webhook.
+  rawCode: string
+}
+
+// POST /open/transact/payment with X-API-PUBKEY. Triggers the MoMo PIN
+// prompt on the payer's phone. Final txstatus is delivered later via the
+// Payments webhook — never wait for it here.
+export async function initiatePayment(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
+  const body = {
+    type: 1,
+    channel: PAYMENT_CHANNEL[input.network],
+    currency: 'GHS',
+    payer: input.payer,
+    amount: input.amount.toFixed(2),
+    externalref: input.externalRef,
+    accountnumber: env.MOOLRE_ACCOUNT_NUMBER,
+  }
+
+  const response = await postJson('/open/transact/payment', body, {
+    'X-API-PUBKEY': env.MOOLRE_API_PUBKEY,
+  })
+
+  return {
+    acknowledged: response.status === 1,
+    rawCode: typeof response.code === 'string' ? response.code : 'UNKNOWN',
   }
 }
 

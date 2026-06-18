@@ -49,8 +49,10 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 ### Float Funding ([float-funding])
 - [ ] Every employer pre-funds a float before workers can request advances —
       no advance can be disbursed against a zero float
-- [ ] Fund Float button visible in Settings (and prompted right after
-      registration for first-time employers with `float_balance = 0`)
+- [ ] Fund Float card prominently visible on the dashboard home (and prompted
+      right after registration for first-time employers with `float_balance = 0`).
+      Funding is a core money operation, not a preference — it does NOT belong
+      behind a Settings page.
 - [ ] Employer enters an amount and confirms
 - [ ] Moolre Payments API called (POST /open/transact/payment) with: type=1, channel (network code), currency=GHS, payer (employer's MoMo), amount, externalref (`wagr-float-{employer_id}-{timestamp}`), accountnumber
 - [ ] Employer receives a USSD payment prompt on their phone and enters their MoMo PIN to authorise

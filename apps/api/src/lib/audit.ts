@@ -19,6 +19,9 @@ export const AUDIT_ACTIONS = [
   'advance_requested',
   'advance_disbursed',
   'advance_failed',
+  'float_funding_initiated',
+  'float_funded',
+  'float_funding_failed',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

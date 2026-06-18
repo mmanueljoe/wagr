@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../errors/app-error'
-import { getTransferStatus, initiateTransfer, sendSms } from './moolre'
+import { getTransferStatus, initiatePayment, initiateTransfer, sendSms } from './moolre'
 
 // We mock global fetch so this file doesn't talk to Moolre. Env is set in
 // vitest's setup; if MOOLRE_BASE_URL/credentials aren't present these tests
@@ -146,6 +146,72 @@ describe('getTransferStatus', () => {
     const result = await getTransferStatus('wagr-adv-abc')
     expect(result.txStatus).toBe(2)
     expect(result.failureReason).toBe('Wrong number')
+  })
+})
+
+describe('initiatePayment', () => {
+  const PAYMENT_ENVELOPE = {
+    status: 1,
+    code: '200_PAYMENT_REQ',
+    message: 'Prompt sent',
+    data: {},
+  }
+
+  it('posts to /open/transact/payment with X-API-PUBKEY and the right body', async () => {
+    const fetchMock = mockFetchOnce(PAYMENT_ENVELOPE)
+
+    const result = await initiatePayment({
+      amount: 5000,
+      payer: '0241235993',
+      network: 'mtn',
+      externalRef: 'wagr-float-emp-123-1718000000',
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/open\/transact\/payment$/)
+
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-API-PUBKEY']).toBeTruthy()
+    // Account-level Transfers key MUST NOT leak into the Payments request.
+    expect(headers['X-API-KEY']).toBeUndefined()
+
+    const body = JSON.parse(init.body as string)
+    expect(body).toMatchObject({
+      type: 1,
+      channel: 13, // MTN → 13 for Payments (different from Transfers!)
+      currency: 'GHS',
+      payer: '0241235993',
+      amount: '5000.00',
+      externalref: 'wagr-float-emp-123-1718000000',
+    })
+    expect(typeof body.accountnumber).toBe('string')
+
+    expect(result.acknowledged).toBe(true)
+  })
+
+  it('translates network values to Payments channel codes (not Transfers codes)', async () => {
+    mockFetchOnce(PAYMENT_ENVELOPE)
+    await initiatePayment({ amount: 100, payer: '0', network: 'telecel', externalRef: 'x' })
+    const fetchSpy = global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }
+    let body = JSON.parse((fetchSpy.mock.calls.at(-1)?.[1].body as string) ?? '{}')
+    expect(body.channel).toBe(6)
+
+    mockFetchOnce(PAYMENT_ENVELOPE)
+    await initiatePayment({ amount: 100, payer: '0', network: 'at', externalRef: 'y' })
+    body = JSON.parse((fetchSpy.mock.calls.at(-1)?.[1].body as string) ?? '{}')
+    expect(body.channel).toBe(7)
+  })
+
+  it('reports acknowledged=false when Moolre returns non-success status', async () => {
+    mockFetchOnce({ status: 0, code: 'PAY99', message: 'down', data: {} })
+    const result = await initiatePayment({
+      amount: 100,
+      payer: '0',
+      network: 'mtn',
+      externalRef: 'x',
+    })
+    expect(result.acknowledged).toBe(false)
   })
 })
 
