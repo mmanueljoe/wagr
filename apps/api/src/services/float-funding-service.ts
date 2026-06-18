@@ -46,6 +46,44 @@ export interface InitiatedTopUp {
   amountCedis: number
 }
 
+export interface FloatStatus {
+  balancePesewas: MoneyPesewas
+  momoNumber: string | null
+  network: EmployeeNetwork | null
+  hasPendingTopUp: boolean
+}
+
+export async function getFloatStatus(employerId: string): Promise<FloatStatus> {
+  const { data: employer, error: empErr } = await looseDb
+    .from('employers')
+    .select('float_balance, momo_number, network')
+    .eq('id', employerId)
+    .maybeSingle()
+
+  if (empErr || !employer) {
+    throw new AppError('EMPLOYER_NOT_FOUND', 404, 'Employer not found')
+  }
+
+  const { count, error: countErr } = await looseDb
+    .from('float_top_ups')
+    .select('id', { count: 'exact', head: true })
+    .eq('employer_id', employerId)
+    .eq('status', 'pending')
+
+  if (countErr) {
+    logger.warn({ err: countErr, employerId }, 'failed to count pending float top-ups')
+  }
+
+  return {
+    balancePesewas: cedisToPesewas(employer.float_balance),
+    momoNumber: employer.momo_number,
+    network: isEmployeeNetwork(employer.network ?? '')
+      ? (employer.network as EmployeeNetwork)
+      : null,
+    hasPendingTopUp: (count ?? 0) > 0,
+  }
+}
+
 export async function initiateFloatTopUp(input: InitiateFloatTopUpInput): Promise<InitiatedTopUp> {
   const amountCedis = pesewasToCedis(input.amountPesewas)
   if (amountCedis <= 0) {

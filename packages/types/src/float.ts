@@ -24,3 +24,14 @@ export interface FundFloatResponse {
   // float balance to detect terminal state.
   prompt_sent: boolean
 }
+
+export interface FloatStatusResponse {
+  balance_pesewas: number
+  // null if the employer hasn't set their payment details yet — the Fund
+  // Float dialog asks for them on first use.
+  momo_number: string | null
+  network: 'mtn' | 'telecel' | 'at' | null
+  // True if there's a pending float top-up. UI uses this to show "awaiting
+  // approval on your phone" until the webhook arrives.
+  has_pending_top_up: boolean
+}
