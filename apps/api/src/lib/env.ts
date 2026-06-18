@@ -30,7 +30,11 @@ export const env = createEnv({
     // field — we verify on every incoming request.
     MOOLRE_WEBHOOK_SECRET: z.string().min(1),
 
-    OPENAI_API_KEY: z.string().min(1),
+    // Generative AI provider for the payslip closing line + credit-flag
+    // reasoning. Currently Google's Gemini Flash because it has a generous
+    // no-credit-card free tier; the call shape lives in lib/payslip-gpt.ts
+    // and could swap to any other provider with a one-file change.
+    GEMINI_API_KEY: z.string().min(1),
 
     WEB_URL: z.string().url().default('http://localhost:3000'),
 
