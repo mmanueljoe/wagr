@@ -4,6 +4,7 @@ import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { supabase } from '../lib/supabase'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
+import { evaluateAdvancePattern } from './advance-pattern-service'
 import {
   notifyAdvanceDisbursed,
   notifyAdvanceFailed,
@@ -171,6 +172,16 @@ export async function markAdvanceDisbursed(
   await notifyAdvanceDisbursed({
     momoNumber: extractMomo(data.employees),
     netPesewas: cedisToPesewas(data.net_disbursed),
+  })
+
+  // Re-evaluate the advance-pattern flag after a successful disbursement.
+  // Fire-and-forget: a flag failure should never bubble up to the caller
+  // (the disbursement already succeeded; the flag is informational).
+  void evaluateAdvancePattern(data.employee_id).catch((err) => {
+    logger.error(
+      { err, employeeId: data.employee_id },
+      'advance-pattern evaluation failed after disbursement',
+    )
   })
 }
 
