@@ -1,4 +1,4 @@
-import type { MoneyPesewas } from '@wagr/types'
+import type { AdvanceRequest, DashboardSummary, MoneyPesewas } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -314,4 +314,85 @@ function roundCedis(value: number): number {
 // the union — narrow defensively.
 function extractMomo(joined: { momo_number: string } | { momo_number: string }[]): string {
   return Array.isArray(joined) ? (joined[0]?.momo_number ?? '') : joined.momo_number
+}
+
+// ─── Dashboard queries ───────────────────────────────────────────────────
+
+interface AdvanceRowWithEmployee {
+  id: string
+  employee_id: string
+  requested_amount: number
+  fee_amount: number
+  net_disbursed: number
+  status: string
+  requested_at: string
+  disbursed_at: string | null
+  employees: { full_name: string } | { full_name: string }[] | null
+}
+
+export async function listRecentAdvances(employerId: string): Promise<AdvanceRequest[]> {
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .select(
+      'id, employee_id, requested_amount, fee_amount, net_disbursed, status, requested_at, disbursed_at, employees!inner(full_name)',
+    )
+    .eq('employer_id', employerId)
+    .order('requested_at', { ascending: false })
+    .limit(10)
+
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to list recent advances')
+    throw new AppError('ADVANCE_LIST_FAILED', 500, 'Could not load advances')
+  }
+
+  return (data as AdvanceRowWithEmployee[]).map((row) => {
+    const emp = Array.isArray(row.employees) ? row.employees[0] : row.employees
+    return {
+      id: row.id,
+      employee_id: row.employee_id,
+      employee_name: emp?.full_name ?? '',
+      requested_amount_pesewas: Math.round(row.requested_amount * PESEWAS_PER_CEDI) as MoneyPesewas,
+      fee_amount_pesewas: Math.round(row.fee_amount * PESEWAS_PER_CEDI) as MoneyPesewas,
+      net_disbursed_pesewas: Math.round(row.net_disbursed * PESEWAS_PER_CEDI) as MoneyPesewas,
+      status: row.status as AdvanceRequest['status'],
+      requested_at: row.requested_at,
+      disbursed_at: row.disbursed_at,
+    }
+  })
+}
+
+export async function getDashboardSummary(
+  employerId: string,
+  payDate: number,
+  today: Date,
+): Promise<DashboardSummary> {
+  const period = getCurrentPayPeriod(payDate, today)
+
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .select('status')
+    .eq('employer_id', employerId)
+    .gte('requested_at', period.start.toISOString())
+    .lte('requested_at', period.end.toISOString())
+
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to load dashboard summary')
+    throw new AppError('SUMMARY_FAILED', 500, 'Could not load dashboard summary')
+  }
+
+  const total = data.length
+  const pending = data.filter((r) => r.status === 'pending').length
+  const repaid = data.filter((r) => r.status === 'repaid').length
+  const disbursed = data.filter((r) => r.status === 'disbursed').length
+
+  // Repayment rate = repaid / (repaid + disbursed). When no advances have
+  // completed we return 100% so the card reads "all good" rather than "0%".
+  const settled = repaid + disbursed
+  const repaymentRate = settled === 0 ? 100 : Math.round((repaid / settled) * 100)
+
+  return {
+    advances_this_period: total,
+    pending_requests: pending,
+    repayment_rate_percent: repaymentRate,
+  }
 }
