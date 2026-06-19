@@ -32,17 +32,32 @@ export default function DashboardPage() {
 
         <FundFloatCard />
 
-        <div className="rounded-lg border bg-white p-6 shadow-sm">
-          <h2 className="font-heading text-lg text-wagr-navy">Workforce</h2>
-          <p className="mt-1 text-sm text-wagr-gray">
-            Manage employees and review advance activity.
-          </p>
-          <Link
-            href="/dashboard/employees"
-            className="mt-4 inline-flex items-center text-sm text-wagr-navy underline"
-          >
-            Go to employees →
-          </Link>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="font-heading text-lg text-wagr-navy">Workforce</h2>
+            <p className="mt-1 text-sm text-wagr-gray">
+              Manage employees who can request advances.
+            </p>
+            <Link
+              href="/dashboard/employees"
+              className="mt-4 inline-flex items-center text-sm text-wagr-navy underline"
+            >
+              Go to employees →
+            </Link>
+          </div>
+
+          <div className="rounded-lg border bg-white p-6 shadow-sm">
+            <h2 className="font-heading text-lg text-wagr-navy">Advances</h2>
+            <p className="mt-1 text-sm text-wagr-gray">
+              Every advance a worker has requested, with status and amount.
+            </p>
+            <Link
+              href="/dashboard/advances"
+              className="mt-4 inline-flex items-center text-sm text-wagr-navy underline"
+            >
+              See advances →
+            </Link>
+          </div>
         </div>
       </div>
     </main>

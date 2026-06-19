@@ -4,6 +4,7 @@ import express from 'express'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { errorHandler } from './middleware/error-handler'
+import { advancesRouter } from './routes/advances'
 import { authRouter } from './routes/auth'
 import { employeesRouter } from './routes/employees'
 import { floatRouter } from './routes/float'
@@ -22,6 +23,7 @@ app.use(cookieParser())
 app.use(healthRouter)
 app.use(authRouter)
 app.use(employeesRouter)
+app.use(advancesRouter)
 app.use(floatRouter)
 app.use(ussdRouter)
 app.use(webhooksRouter)
