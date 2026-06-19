@@ -1,4 +1,4 @@
-import type { MoneyPesewas } from '@wagr/types'
+import type { AdvanceListItem, AdvanceStatus, MoneyPesewas } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -45,6 +45,70 @@ export async function getCurrentPeriodDisbursedPesewas(
   // boundary so the wage engine sees pesewas integers only.
   const totalCedis = data.reduce((sum, row) => sum + row.requested_amount, 0)
   return Math.round(totalCedis * PESEWAS_PER_CEDI) as MoneyPesewas
+}
+
+// ─── Listing ─────────────────────────────────────────────────────────────
+
+const ADVANCE_LIST_LIMIT = 100
+
+interface ListAdvancesFilters {
+  status?: AdvanceStatus
+}
+
+// Returns the employer's advances, newest first. Capped at 100 — pagination
+// is a polish item once the dashboard has real traffic.
+export async function listAdvancesForEmployer(
+  employerId: string,
+  filters: ListAdvancesFilters = {},
+): Promise<AdvanceListItem[]> {
+  let query = supabase
+    .from('advance_requests')
+    .select(
+      'id, requested_amount, fee_amount, net_disbursed, status, requested_at, disbursed_at, failure_reason, employees!inner(full_name, momo_number)',
+    )
+    .eq('employer_id', employerId)
+    .order('requested_at', { ascending: false })
+    .limit(ADVANCE_LIST_LIMIT)
+
+  if (filters.status) {
+    query = query.eq('status', filters.status)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to list advances')
+    throw new AppError('ADVANCE_LIST_FAILED', 500, 'Could not load advances')
+  }
+
+  return (data ?? []).map(rowToAdvanceListItem)
+}
+
+function rowToAdvanceListItem(row: {
+  id: string
+  requested_amount: number
+  fee_amount: number
+  net_disbursed: number
+  status: string
+  requested_at: string
+  disbursed_at: string | null
+  failure_reason: string | null
+  employees:
+    | { full_name: string; momo_number: string }
+    | { full_name: string; momo_number: string }[]
+}): AdvanceListItem {
+  const employee = Array.isArray(row.employees) ? row.employees[0] : row.employees
+  return {
+    id: row.id,
+    worker_name: employee?.full_name ?? '',
+    worker_momo: employee?.momo_number ?? '',
+    requested_pesewas: cedisToPesewas(row.requested_amount),
+    fee_pesewas: cedisToPesewas(row.fee_amount),
+    net_pesewas: cedisToPesewas(row.net_disbursed),
+    status: row.status as AdvanceStatus,
+    requested_at: row.requested_at,
+    disbursed_at: row.disbursed_at,
+    failure_reason: row.failure_reason,
+  }
 }
 
 // ─── Advance lifecycle ───────────────────────────────────────────────────
