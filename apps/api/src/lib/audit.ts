@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   'advance_requested',
   'advance_disbursed',
   'advance_failed',
+  'advance_retried',
   'float_funding_initiated',
   'float_funded',
   'float_funding_failed',
