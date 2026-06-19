@@ -24,6 +24,7 @@ import {
 import { useSetEmployeeActive } from '@/hooks/use-set-employee-active'
 import type { Employee } from '@wagr/types'
 import { formatGhs } from '@wagr/types'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
 const NETWORK_LABELS: Record<Employee['network'], string> = {
@@ -37,6 +38,8 @@ interface EmployeesTableProps {
 }
 
 export function EmployeesTable({ employees }: Readonly<EmployeesTableProps>) {
+  const router = useRouter()
+
   return (
     <div className="bg-wagr-white rounded-wagr-lg border border-wagr-gray-light overflow-hidden">
       <Table>
@@ -46,13 +49,18 @@ export function EmployeesTable({ employees }: Readonly<EmployeesTableProps>) {
             <TableHead>MoMo number</TableHead>
             <TableHead>Network</TableHead>
             <TableHead className="text-right">Monthly salary</TableHead>
+            <TableHead className="text-right">Advances this period</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {employees.map((e) => (
-            <TableRow key={e.id}>
+            <TableRow
+              key={e.id}
+              onClick={() => router.push(`/dashboard/employees/${e.id}`)}
+              className="cursor-pointer hover:bg-wagr-gray-light/40"
+            >
               <TableCell className="font-medium">
                 <span className="inline-flex items-center gap-2">
                   {e.full_name}
@@ -63,6 +71,9 @@ export function EmployeesTable({ employees }: Readonly<EmployeesTableProps>) {
               <TableCell>{NETWORK_LABELS[e.network]}</TableCell>
               <TableCell className="text-right font-mono text-sm">
                 {formatGhs(e.monthly_salary_pesewas)}
+              </TableCell>
+              <TableCell className="text-right font-mono text-sm">
+                {e.advances_this_period_count ?? 0}
               </TableCell>
               <TableCell>
                 <span
@@ -75,7 +86,7 @@ export function EmployeesTable({ employees }: Readonly<EmployeesTableProps>) {
                   {e.is_active ? 'Active' : 'Deactivated'}
                 </span>
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
                 <EmployeeRowActions employee={e} />
               </TableCell>
             </TableRow>

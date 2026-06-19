@@ -45,4 +45,8 @@ export interface Employee {
   credit_flag_reason: string | null
   credit_flag_at: string | null
   created_at: string
+  // Populated by GET /employees so the dashboard can sort by "most advances
+  // this period". Other endpoints (create, update, dismiss-flag) return the
+  // employee without this field — undefined means "not computed", not zero.
+  advances_this_period_count?: number
 }

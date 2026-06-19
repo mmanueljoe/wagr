@@ -3,6 +3,7 @@ import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { supabase } from '../lib/supabase'
+import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
 
 // Marshalling boundary for money: pesewas (integer) in our code, numeric cedis
 // in Postgres. Convert here so the rest of the codebase never sees raw cedis.
@@ -227,7 +228,48 @@ export async function listEmployees(employerId: string): Promise<Employee[]> {
     throw new AppError('EMPLOYEE_LIST_FAILED', 500, 'Could not load workers')
   }
 
-  return data.map(rowToEmployee)
+  const employees = data.map(rowToEmployee)
+  const counts = await countAdvancesThisPeriodByEmployee(employerId, new Date())
+  return employees.map((e) => ({ ...e, advances_this_period_count: counts.get(e.id) ?? 0 }))
+}
+
+// One round trip per employer instead of one per employee. Fetches every
+// advance_request in the current pay period, groups by employee_id in JS.
+// Pending + disbursed both count — they're requests the worker made this
+// period, regardless of whether Moolre has settled them yet.
+async function countAdvancesThisPeriodByEmployee(
+  employerId: string,
+  today: Date,
+): Promise<Map<string, number>> {
+  const { data: employer, error: empErr } = await supabase
+    .from('employers')
+    .select('pay_date')
+    .eq('id', employerId)
+    .single()
+
+  if (empErr || !employer) {
+    logger.error({ err: empErr, employerId }, 'failed to read pay_date for advance counts')
+    return new Map()
+  }
+
+  const period = getCurrentPayPeriod(employer.pay_date, today)
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .select('employee_id')
+    .eq('employer_id', employerId)
+    .gte('requested_at', period.start.toISOString())
+    .lte('requested_at', period.end.toISOString())
+
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to count per-employee advances')
+    return new Map()
+  }
+
+  const counts = new Map<string, number>()
+  for (const row of data ?? []) {
+    counts.set(row.employee_id, (counts.get(row.employee_id) ?? 0) + 1)
+  }
+  return counts
 }
 
 interface EmployeeRow {
