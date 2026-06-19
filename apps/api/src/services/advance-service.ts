@@ -53,6 +53,7 @@ const ADVANCE_LIST_LIMIT = 100
 
 interface ListAdvancesFilters {
   status?: AdvanceStatus
+  employeeId?: string
 }
 
 // Returns the employer's advances, newest first. Capped at 100 — pagination
@@ -72,6 +73,9 @@ export async function listAdvancesForEmployer(
 
   if (filters.status) {
     query = query.eq('status', filters.status)
+  }
+  if (filters.employeeId) {
+    query = query.eq('employee_id', filters.employeeId)
   }
 
   const { data, error } = await query

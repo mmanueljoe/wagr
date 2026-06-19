@@ -32,7 +32,7 @@ export default function AdvancesPage() {
   const showEmpty = !isLoading && !error && advances.length === 0
 
   return (
-    <main className="min-h-screen bg-wagr-gray-light p-4 md:p-8">
+    <main className="p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>

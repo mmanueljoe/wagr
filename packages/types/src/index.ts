@@ -1,5 +1,6 @@
 export * from './advance'
 export * from './auth'
+export * from './dashboard'
 export * from './employee'
 export * from './float'
 export * from './money'

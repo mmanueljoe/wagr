@@ -77,7 +77,7 @@ export default function NewEmployeePage() {
   }
 
   return (
-    <main className="min-h-screen bg-wagr-gray-light p-4 md:p-8">
+    <main className="p-4 md:p-8">
       <div className="max-w-2xl mx-auto">
         <Link
           href="/dashboard/employees"
