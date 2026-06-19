@@ -1,5 +1,6 @@
 'use client'
 
+import { AdvancePatternFlag } from '@/components/dashboard/advance-pattern-flag'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +53,12 @@ export function EmployeesTable({ employees }: Readonly<EmployeesTableProps>) {
         <TableBody>
           {employees.map((e) => (
             <TableRow key={e.id}>
-              <TableCell className="font-medium">{e.full_name}</TableCell>
+              <TableCell className="font-medium">
+                <span className="inline-flex items-center gap-2">
+                  {e.full_name}
+                  <AdvancePatternFlag employee={e} />
+                </span>
+              </TableCell>
               <TableCell className="font-mono text-sm">{e.momo_number}</TableCell>
               <TableCell>{NETWORK_LABELS[e.network]}</TableCell>
               <TableCell className="text-right font-mono text-sm">

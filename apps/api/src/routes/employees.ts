@@ -2,6 +2,7 @@ import { createEmployeeSchema, setEmployeeActiveSchema } from '@wagr/types'
 import { Router } from 'express'
 import {
   createEmployeeHandler,
+  dismissEmployeeFlagHandler,
   listEmployeesHandler,
   setEmployeeActiveHandler,
 } from '../controllers/employee-controller'
@@ -23,3 +24,4 @@ employeesRouter.patch(
   validateBody(setEmployeeActiveSchema),
   setEmployeeActiveHandler,
 )
+employeesRouter.post('/employees/:id/dismiss-flag', requireAuth, dismissEmployeeFlagHandler)
