@@ -11,6 +11,28 @@
 
 All money movement in Wagr runs through Moolre's APIs. This spec covers three flows: disbursing an advance to a worker's MoMo wallet, collecting float funds from an employer, and recovering advance repayments from an employer on payday.
 
+### Wagr's product scope — EWA only, not payroll
+
+**Wagr is an earned-wage-access (EWA) product. Wagr does NOT process payroll.**
+The employer's existing payroll process (bank transfer, MTN payroll, manual
+MoMo, spreadsheet — whatever they already use) continues to pay each worker
+their full salary. Wagr only intercepts a portion of that salary *earlier*,
+on demand, when the worker dials USSD.
+
+The end-of-period flow Wagr triggers is **advance recovery**, not payroll
+processing. Specifically, on each pay period end:
+
+1. The employer clicks **"Close Pay Period"** on the dashboard.
+2. Wagr sums each worker's outstanding advances and pulls the total from the
+   employer's MoMo wallet via Moolre Payments.
+3. Wagr sends each worker a WhatsApp summary of what they advanced this
+   period (informational — not a payment notification).
+4. The employer separately pays each worker's regular salary minus the
+   advance amount through their own existing payroll process.
+
+Wagr never disburses regular salaries. Wagr only disburses advances (via
+USSD) and recovers advance totals (via the close-pay-period flow).
+
 Moolre uses **two different status delivery patterns** depending on the API. The implementation must respect both:
 
 - **Transfers API** (used for [moolre-disbursement] — sending money out): status is delivered by **polling** the Transfer Status endpoint. There is no webhook for transfers. Never mark a transfer as failed unless `txstatus = 2`.
@@ -26,7 +48,7 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 
 **[float-funding]** — As an employer, I want to fund my float via Moolre's Payments API so that advances can be disbursed from my account.
 
-**[payday-recovery]** — As the system, I want to recover outstanding advances from an employer on payday via Moolre's Payments API.
+**[payday-recovery]** — As the system, I want to recover outstanding advances from an employer at the end of each pay period via Moolre's Payments API. (Triggered when the employer clicks **Close Pay Period** on the dashboard. This is NOT a payroll run — Wagr only pulls the advance total; the employer pays regular salaries through their own existing process.)
 
 ---
 
@@ -61,12 +83,12 @@ Full Moolre integration details are in [moolre-api-reference.md](../architecture
 - [ ] Transaction recorded in audit_log
 
 ### Payday Recovery ([payday-recovery])
-- [ ] Triggered when employer clicks Process Payroll on the dashboard
+- [ ] Triggered when employer clicks **Close Pay Period** on the dashboard. (Not "Process Payroll" — Wagr is not a payroll service. See Overview.)
 - [ ] System calculates total outstanding advances: **SUM of `requested_amount` (gross)** for advance_requests with status: disbursed in the current pay period for this employer — this is what the employer fronted (worker's net + Wagr's fee, both came from the employer's float). The worker repays the gross from their salary; the Wagr fee was their cost of taking the advance early.
 - [ ] Moolre Payments API called for the total recovery amount, externalref = `wagr-repay-{repayment_id}`
 - [ ] If the employer authorises the recovery from within the dashboard via the same USSD session that prompted the action, pass the USSD `sessionid` in the Payments call to skip the OTP step. This avoids a double-PIN UX.
 - [ ] When Moolre webhook fires with txstatus = 1: all included advance_request records updated to status: repaid, repayment record created
-- [ ] When Moolre webhook fires with txstatus = 2: employer notified, payroll run blocked until resolved — partial recovery not allowed
+- [ ] When Moolre webhook fires with txstatus = 2: employer notified, pay-period close blocked until resolved — partial recovery not allowed
 - [ ] float_balance replenished by recovered amount
 - [ ] WhatsApp payslips triggered after successful recovery ([whatsapp-worker-payslip])
 - [ ] All events written to audit_log
@@ -262,5 +284,5 @@ apps/api/src/lib/
 
 apps/api/src/routes/
 ├── webhooks.ts                  # POST /webhooks/moolre (Payments status only — Transfers use polling)
-└── payroll.ts                   # POST /payroll/run (triggers [payday-recovery])
+└── period-close.ts             # POST /period-close/run (triggers [payday-recovery])
 ```

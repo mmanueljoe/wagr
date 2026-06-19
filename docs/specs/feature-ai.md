@@ -27,7 +27,7 @@ Submit at least one payslip template to Meta for approval as part of [moolre-san
 
 **[payslip-gpt]** — As the system, I want a payslip generation service that produces the placeholder values for a Meta-approved WhatsApp template — including a GPT-4o-generated friendly closing line — so each worker receives a personalised payslip on payday.
 
-**[credit-scoring-gpt]** — As the system, I want a credit scoring service that flags employees with risky advance patterns and generates a plain-English explanation.
+**[credit-scoring-gpt]** — As the system, I want an **advance-pattern** flag that surfaces workers pulling advances frequently, with a plain-English explanation, so the employer can check in early. (Reframed from "credit scoring" — Wagr does not score creditworthiness or make lending decisions. The flag is informational only. See Acceptance Criteria for the narrower scope.)
 
 ---
 
@@ -44,47 +44,73 @@ Submit at least one payslip template to Meta for approval as part of [moolre-san
 - [ ] Tone is warm, plain, and Ghanaian in context — not a bank statement
 - [ ] Unit tested with mock GPT-4o responses
 
-### Credit Scoring ([credit-scoring-gpt])
-- [ ] Two flag triggers:
-  - High frequency: more than 3 advance requests in any rolling 7-day window
-  - Failed repayment: any advance_request with status: failed in the last 90 days
-- [ ] Scoring runs on two triggers: nightly cron at 2am and on each new advance_request creation
-- [ ] For each flagged employee, GPT-4o called to generate a one-sentence plain-English explanation
-- [ ] Flag and explanation stored on the employee record: credit_flag (boolean), credit_flag_reason (text), credit_flag_date (timestamp)
-- [ ] Flags cleared automatically when the pattern resolves (frequency drops below threshold, failed advances are resolved)
-- [ ] Unit tested for flag trigger logic — GPT-4o call is mocked in tests
+### Advance Pattern Flag ([credit-scoring-gpt])
+- [ ] **Scope reframe**: this is NOT credit scoring. It does not produce a
+      score, does not gate advances, does not make lending decisions. It
+      surfaces "this worker is taking advances at a frequency worth
+      noticing" to the employer as an *informational* signal.
+- [ ] One flag trigger:
+  - **High frequency** — more than 3 advance requests in any rolling 7-day
+    window
+- [ ] (Dropped from original spec: a "failed repayment" trigger keyed on
+      `advance_request.status='failed'`. That status fires when the
+      *disbursement* fails — wrong MoMo number, network issue. That's not
+      a worker-risk signal; penalising the worker for a network blip is
+      wrong. A genuine "worker left before payday" signal would require
+      new schema fields and is out of scope for the buildathon.)
+- [ ] Evaluation runs on two triggers: nightly cron at 2am and on each
+      new advance_request creation (fire-and-forget after `markAdvanceDisbursed`)
+- [ ] For each flagged worker, the LLM (Gemini Flash) called to generate a
+      one-sentence plain-English explanation for the employer
+- [ ] Flag and explanation stored on the employee record using the
+      existing `credit_flag` (boolean), `credit_flag_reason` (text), and
+      `credit_flag_at` (timestamptz) columns. (Column names kept as-is to
+      avoid a schema migration; UI labels them "advance pattern" not
+      "credit".)
+- [ ] Flag clears automatically when the pattern resolves (frequency drops
+      back below threshold on the next evaluation tick)
+- [ ] LLM prompt contains only the trigger reason code + worker first name.
+      No salary, no MoMo, no advance amounts sent to the third-party LLM
+      (per the security pattern hardened in [payslip-gpt])
+- [ ] Static fallback explanation when the LLM call fails:
+      `"Multiple advance requests in a short window."`
+- [ ] Unit tested for trigger logic — LLM call is mocked in tests
 
 ---
 
 ## Technical Notes
 
-### Meta-approved payslip template
+### Meta-approved advance summary template
 
-Wagr submits this template to Meta for approval (via the Moolre portal). Until Meta approves it, no WhatsApp payslip can be sent. Submit during [moolre-sandbox-tested].
+Wagr submits this template to Meta for approval (via the Moolre portal). Until Meta approves it, no WhatsApp message can be sent. Submit during [moolre-sandbox-tested].
+
+**Wording note**: This is an **advance summary**, not a payslip. Wagr does
+not pay the worker's salary — the employer's existing payroll does that
+separately. The template wording is deliberately honest about this so we
+don't make false claims about money Wagr never moved.
 
 ```
-Template name: wagr_payslip_v1
+Template name: wagr_advance_summary_v1
 Language: en
 Body:
-Hi {{1}}, your {{2}} payslip from {{3}}.
+Hi {{1}}, your {{2}} advance summary from {{3}}.
 
-Gross: GHS {{4}}
-Advances taken: GHS {{5}}
-Net pay: GHS {{6}}
+Advances you took this period: GHS {{4}}
 
-{{7}}
+Your employer will pay your regular salary minus this amount through
+their normal payroll.
+
+{{5}}
 — Wagr
 ```
 
 | Placeholder | Source | Example |
 |---|---|---|
-| `{{1}}` employee name | database | `Abena` |
+| `{{1}}` worker first name | database | `Abena` |
 | `{{2}}` pay period | database | `June 2026` |
 | `{{3}}` employer name | database | `Accra Wellness Clinic` |
-| `{{4}}` gross salary | database | `1,400` |
-| `{{5}}` total advances | database | `300` |
-| `{{6}}` net pay | database | `1,100` |
-| `{{7}}` closing line | **GPT-4o** | `You worked hard for it. Take care of yourself this month.` |
+| `{{4}}` total advances this period | database | `300` |
+| `{{5}}` closing line | **LLM (Gemini Flash)** | `Take care of yourself this month, Abena.` |
 
 ### Payslip generator implementation
 
