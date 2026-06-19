@@ -1,50 +1,62 @@
 'use client'
 
+import { AdvanceTable } from '@/components/dashboard/advance-table'
 import { FundFloatCard } from '@/components/dashboard/fund-float-card'
-import { Button } from '@/components/ui/button'
-import { useLogout } from '@/hooks/use-logout'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
+import { StatCard } from '@/components/dashboard/stat-card'
+import { EmptyState } from '@/components/shared/empty-state'
+import { useDashboardSummary, useRecentAdvances } from '@/hooks/use-advances'
+import { CreditCard } from 'lucide-react'
 
 export default function DashboardPage() {
-  const router = useRouter()
-  const logout = useLogout()
+  const { data: summary, isLoading: summaryLoading } = useDashboardSummary()
+  const { data: advances, isLoading: advancesLoading } = useRecentAdvances()
 
-  function onLogout() {
-    logout.mutate(undefined, {
-      onSuccess: () => {
-        toast.success('Logged out')
-        router.push('/login')
-      },
-    })
-  }
+  const advancesThisPeriod = summaryLoading ? '—' : String(summary?.advances_this_period ?? 0)
+  const pendingRequests = summaryLoading ? '—' : String(summary?.pending_requests ?? 0)
+  const repaymentRate = summaryLoading ? '—' : `${summary?.repayment_rate_percent ?? 100}%`
 
   return (
-    <main className="min-h-screen bg-wagr-gray-light p-6">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <header className="flex items-center justify-between">
-          <h1 className="font-heading text-2xl text-wagr-navy">Welcome to Wagr</h1>
-          <Button onClick={onLogout} disabled={logout.isPending} variant="secondary">
-            {logout.isPending ? 'Logging out…' : 'Log out'}
-          </Button>
-        </header>
+    <div className="space-y-8">
+      <div>
+        <h1 className="font-heading text-2xl font-semibold text-wagr-navy">Dashboard</h1>
+        <p className="text-sm text-wagr-gray mt-1">Your float and advance activity at a glance.</p>
+      </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <FundFloatCard />
 
-        <div className="rounded-lg border bg-white p-6 shadow-sm">
-          <h2 className="font-heading text-lg text-wagr-navy">Workforce</h2>
-          <p className="mt-1 text-sm text-wagr-gray">
-            Manage employees and review advance activity.
-          </p>
-          <Link
-            href="/dashboard/employees"
-            className="mt-4 inline-flex items-center text-sm text-wagr-navy underline"
-          >
-            Go to employees →
-          </Link>
-        </div>
+        <StatCard
+          label="Advances This Period"
+          value={advancesThisPeriod}
+          subtext="Requests this pay cycle"
+        />
+
+        <StatCard
+          label="Pending Requests"
+          value={pendingRequests}
+          subtext="Awaiting disbursement"
+        />
+
+        <StatCard label="Repayment Rate" value={repaymentRate} subtext="Repaid vs disbursed" />
       </div>
-    </main>
+
+      <div className="space-y-4">
+        <h2 className="font-heading text-lg font-medium text-wagr-navy">Recent Advance Requests</h2>
+
+        {advancesLoading && <p className="text-sm text-wagr-gray">Loading…</p>}
+
+        {!advancesLoading && advances && advances.length === 0 && (
+          <EmptyState
+            icon={CreditCard}
+            title="No advances yet"
+            description="Advances will appear here once workers start requesting them via USSD."
+          />
+        )}
+
+        {!advancesLoading && advances && advances.length > 0 && (
+          <AdvanceTable advances={advances} />
+        )}
+      </div>
+    </div>
   )
 }
