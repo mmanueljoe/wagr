@@ -55,24 +55,29 @@ The employer dashboard is the primary web interface for Wagr. Employers use it t
 - [ ] Failed advances show a Retry button (triggers [moolre-disbursement] disbursement retry)
 - [ ] Pagination — 50 rows per page
 
-### Payroll Processing ([payroll-flow])
-- [ ] Payroll page shows the current period summary
-- [ ] Table columns: Employee, Gross Salary, Advances Deducted, Net Salary
-- [ ] Summary row at the bottom: Total Gross, Total Advances, Total Net
-- [ ] Total to be collected from employer shown prominently
-- [ ] Process Payroll button opens a confirmation modal
-- [ ] Confirmation modal shows: amount to be collected from employer, number of employees to be paid
+### Close Pay Period ([payroll-flow])
+*(Slug name retained for branch continuity. The actual flow is "close pay period" — recover outstanding advances + send worker advance summaries. Wagr does NOT disburse worker salaries; see [feature-disbursements.md](feature-disbursements.md) "Wagr's product scope".)*
+
+- [ ] Pay-period page shows the current period summary
+- [ ] Table columns: Worker, Advances Taken This Period, Date of Last Advance
+- [ ] Summary row at the bottom: Total Advances to Recover (this is the amount that will be pulled from the employer's MoMo)
+- [ ] **Close Pay Period** button opens a confirmation modal
+- [ ] Confirmation modal shows: amount to be collected from the employer's MoMo, number of workers who took advances this period (who will receive a WhatsApp summary)
+- [ ] Confirmation modal explicitly states: *"Wagr will pull GHS X from your MoMo to recover advances. Your regular payroll process is unchanged — you still pay each worker their normal salary minus the advance amount they took."*
 - [ ] Processing state shown during the operation — button disabled, spinner visible
-- [ ] Success state: green banner, payroll summary shown, WhatsApp payslips sent
+- [ ] Success state: green banner, recovery summary shown, WhatsApp advance summaries sent
 - [ ] Failure state: red banner with error, no partial processing
 
-### AI Credit Flags ([dashboard-credit-flags])
-- [ ] Warning icon on employee row when an active credit flag exists
+### Advance Pattern Flags ([dashboard-credit-flags])
+*(Reframed from "AI Credit Flags". Wagr does not score creditworthiness or make lending decisions; the flag is informational. See [feature-ai.md](feature-ai.md) "Advance Pattern Flag" for the scope rationale.)*
+
+- [ ] Warning icon on employee row when an active advance-pattern flag exists
 - [ ] Clicking the icon opens a side panel or modal
-- [ ] Panel shows: flag reason (plain English, GPT-4o generated), date flagged, advance history for the past 30 days
+- [ ] Panel shows: flag reason (plain English, LLM-generated), date flagged, advance history for the past 30 days
 - [ ] Employer can dismiss a flag — sets flag to acknowledged, icon changes to gray
-- [ ] Dismissed flags reappear if the risky pattern continues
+- [ ] Dismissed flags reappear if the pattern continues on the next evaluation
 - [ ] Flags list accessible from a dedicated Flags tab in the employee detail view
+- [ ] UI labels say "advance pattern" / "frequent advances" — **never** "credit risk" or "credit score" (those would overclaim what Wagr is measuring)
 
 ---
 
@@ -102,7 +107,7 @@ const navItems = [
   { href: '/dashboard',           label: 'Dashboard',  icon: IconDashboard },
   { href: '/dashboard/employees', label: 'Employees',  icon: IconUsers },
   { href: '/dashboard/advances',  label: 'Advances',   icon: IconCreditCard },
-  { href: '/dashboard/payroll',   label: 'Payroll',    icon: IconCalendar },
+  { href: '/dashboard/period-close', label: 'Close Period', icon: IconCalendar },
   { href: '/dashboard/settings',  label: 'Settings',   icon: IconSettings },
 ]
 ```
@@ -130,18 +135,18 @@ export function useAdvances(filters?: AdvanceFilters) {
 }
 ```
 
-### Payroll Processing Flow (frontend)
+### Close Pay Period Flow (frontend)
 
 ```
-Employer clicks "Process Payroll"
+Employer clicks "Close Pay Period"
     │
     ▼
-GET /payroll/preview → shows summary table and totals
+GET /period-close/preview → shows advances to recover + workers to notify
     │
 Employer reviews and clicks "Confirm"
     │
     ▼
-POST /payroll/run → returns immediately with { jobId }
+POST /period-close/run → returns immediately with { jobId }
     │
     ▼
 Poll GET /payroll/status/{jobId} every 3 seconds

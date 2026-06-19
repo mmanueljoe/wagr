@@ -80,7 +80,7 @@ Stories in this epic establish the project infrastructure. Nothing else can be b
   - SMS API — test message delivered to a real phone number using Moolre's sandbox sender ID.
   - WhatsApp API — test message delivered to a real WhatsApp number using Moolre's sandbox WhatsApp number.
   - Account callback URL set via Update Account, webhook handler verified end-to-end.
-  - **Long-lead-time work started:** register the `Wagr` SMS sender ID for approval; kick off WhatsApp Meta verification flow; submit the `wagr_payslip_v1` template to Meta for approval. None of these block sandbox testing, but they take days, so start them now.
+  - **Long-lead-time work started:** register the `Wagr` SMS sender ID for approval; kick off WhatsApp Meta verification flow; submit the `wagr_advance_summary_v1` template to Meta for approval (see [feature-ai.md](feature-ai.md) for the exact wording — submit the corrected template, not the original "payslip" wording). None of these block sandbox testing, but they take days, so start them now.
   - All response schemas documented in a Postman collection committed to the repo.
 - Sprint: Week 1
 - Story points: 3
@@ -289,12 +289,12 @@ Stories covering the employer-facing web application.
 
 ---
 
-**[payroll-flow]** — As an employer, I want to process payroll from the dashboard so that advances are recovered and net salaries are sent automatically.
+**[payroll-flow]** *(slug name retained for branch continuity — actual scope is **pay-period close**, not payroll. Wagr does not disburse regular salaries; see [feature-disbursements.md](feature-disbursements.md) "Wagr's product scope".)* — As an employer, I want to close out the pay period from the dashboard so outstanding advances are recovered from my MoMo and workers receive an advance summary on WhatsApp.
 
-- Acceptance criteria: Payroll section shows a summary: each employee, gross salary, total advances to deduct, net salary. Employer reviews and clicks Process Payroll. Confirmation modal shows total to be collected from employer and total to be disbursed to employees. On confirmation, triggers [payday-recovery] (collection) then [moolre-disbursement] batch (net salary disbursements). Progress shown in real time. Completion summary shows how many employees were paid.
+- Acceptance criteria: Pay-period section shows a summary: each employee with total advances taken this period + sum recovery amount to be pulled from the employer's MoMo. Employer reviews and clicks **Close Pay Period**. Confirmation modal shows total to be collected from employer. On confirmation, triggers [payday-recovery] (one Moolre Payments collection for the gross total). When recovery confirms via webhook, triggers [whatsapp-worker-payslip] to send each worker their advance summary (NOT a salary disbursement — Wagr does not pay salaries). Progress shown in real time. Completion summary shows how many workers were notified and how much was recovered.
 - Sprint: Week 4
 - Story points: 5
-- Depends on: [payday-recovery], [moolre-disbursement]
+- Depends on: [payday-recovery], [whatsapp-worker-payslip]
 
 ---
 
@@ -322,9 +322,9 @@ Stories covering SMS and WhatsApp notifications.
 
 ---
 
-**[whatsapp-worker-payslip]** — As a worker, I want to receive my payslip on WhatsApp on payday so that I have a clear record of my earnings and deductions.
+**[whatsapp-worker-payslip]** — As a worker, I want to receive a WhatsApp summary of advances I took this pay period, so I know what to expect when my employer pays my regular salary.
 
-- Acceptance criteria: WhatsApp message sent via Moolre WhatsApp API after net salary is disbursed, using a Meta-approved template (`wagr_payslip_v1`). Template placeholders include: employee name, pay period, employer name, gross salary, total advances, net pay, and a GPT-4o-generated closing line (under 30 words, warm tone, Ghanaian context). The structured fields come from the database; only the closing line is AI-generated. Message delivered within 5 minutes of payroll completion. Requires the template to be approved by Meta — submitted during [moolre-sandbox-tested].
+- Acceptance criteria: WhatsApp message sent via Moolre WhatsApp API after [payday-recovery] confirms via webhook, using a Meta-approved template (`wagr_advance_summary_v1` — see [feature-ai.md](feature-ai.md) for the exact wording). The message is an **advance summary**, NOT a payslip — it does not claim Wagr paid the worker's salary. Template placeholders: worker first name, pay period, employer name, total advances taken this period, and an LLM-generated closing line (≤20 words, warm tone). Structured fields come from the database; only the closing line is AI-generated. Message delivered within 5 minutes of pay-period close. Requires the template to be approved by Meta — submitted during [moolre-sandbox-tested].
 - Sprint: Week 4
 - Story points: 3
 - Depends on: [payroll-flow], [moolre-sandbox-tested]
@@ -346,7 +346,7 @@ Stories covering GPT-4o integrations.
 
 ---
 
-**[payslip-gpt]** — As the system, I want a payslip generation service that produces the placeholder values for a Meta-approved WhatsApp payslip template, including a GPT-4o-generated friendly closing line, so payslips feel personal and readable while complying with WhatsApp Business rules.
+**[payslip-gpt]** — As the system, I want a generation service that produces the placeholder values for a Meta-approved WhatsApp **advance summary** template — including an LLM-generated friendly closing line — so messages feel personal and readable while complying with WhatsApp Business rules. (Provider currently Gemini Flash; see [feature-ai.md](feature-ai.md) for the provider-swap rationale.)
 
 - Acceptance criteria: Service accepts: employee name, pay period, employer name, gross salary, advance deductions array, total advances, net pay. Returns an object with `template_name`, `language`, and `placeholders`. Structured placeholders (name, period, employer, gross, advances_total, net) are filled deterministically from the input. The `closing_line` placeholder is generated by GPT-4o with a constrained prompt (under 30 words, friendly tone, Ghanaian context). Fallback to a static closing line ("Thank you for your work this month.") if GPT-4o API fails or times out. Unit tested with mock GPT-4o responses.
 - Sprint: Week 4
@@ -393,7 +393,7 @@ Stories covering the public-facing marketing website.
 
 **[landing-features-bento]** — As a visitor, I want to see a Features section that explains how Wagr uses Moolre APIs so that the platform's capabilities are clear.
 
-- Acceptance criteria: Six feature cards covering: USSD access, instant MoMo disbursement, employer dashboard, WhatsApp payslips, AI credit scoring, and payday recovery. Each card has an icon, a title, and a two-sentence description. Built with Aceternity UI bento grid component.
+- Acceptance criteria: Six feature cards covering: USSD access, instant MoMo disbursement, employer dashboard, WhatsApp advance summaries, AI advance-pattern flags, and pay-period close. Each card has an icon, a title, and a two-sentence description. Built with Aceternity UI bento grid component.
 - Sprint: Week 5
 - Story points: 2
 - Depends on: [landing-structure]
