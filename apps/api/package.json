@@ -13,7 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.48.0",
+    "@supabase/supabase-js": "^2.108.2",
     "@t3-oss/env-core": "^0.13.0",
     "@upstash/redis": "^1.38.0",
     "@wagr/types": "workspace:*",
