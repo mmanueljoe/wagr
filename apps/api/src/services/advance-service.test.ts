@@ -92,11 +92,13 @@ describe('listRecentAdvances', () => {
         employees: { full_name: 'Ama Mensah' },
       },
     ]
+    // listRecentAdvances delegates to listAdvances which uses .range() for pagination
+    // and returns { data, error, count } (not just { data, error }).
     const chain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
+      range: vi.fn().mockResolvedValue({ data: rows, error: null, count: 1 }),
     }
     vi.spyOn(supabaseLib.supabase, 'from').mockReturnValue(chain as never)
 

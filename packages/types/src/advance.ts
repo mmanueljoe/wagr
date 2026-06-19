@@ -15,6 +15,20 @@ export interface AdvanceRequest {
   disbursed_at: string | null
 }
 
+export interface AdvanceFilters {
+  status?: AdvanceStatus | 'all'
+  from?: string
+  to?: string
+  page?: number
+}
+
+export interface PaginatedAdvances {
+  advances: AdvanceRequest[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 // Summary returned from GET /dashboard/summary.
 export interface DashboardSummary {
   advances_this_period: number

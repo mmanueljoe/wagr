@@ -1,4 +1,10 @@
-import type { AdvanceRequest, DashboardSummary, MoneyPesewas } from '@wagr/types'
+import type {
+  AdvanceFilters,
+  AdvanceRequest,
+  DashboardSummary,
+  MoneyPesewas,
+  PaginatedAdvances,
+} from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -330,35 +336,145 @@ interface AdvanceRowWithEmployee {
   employees: { full_name: string } | { full_name: string }[] | null
 }
 
-export async function listRecentAdvances(employerId: string): Promise<AdvanceRequest[]> {
-  const { data, error } = await supabase
+interface AdvanceRowForRetry {
+  id: string
+  employer_id: string
+  employee_id: string
+  requested_amount: number
+  net_disbursed: number
+  employees:
+    | { momo_number: string; network: string }
+    | { momo_number: string; network: string }[]
+    | null
+}
+
+export interface RetryAdvanceInfo {
+  advanceId: string
+  externalRef: string
+  netCedis: number
+  requestedCedis: number
+  momoNumber: string
+  network: string
+}
+
+function rowToAdvanceRequest(row: AdvanceRowWithEmployee): AdvanceRequest {
+  const emp = Array.isArray(row.employees) ? row.employees[0] : row.employees
+  return {
+    id: row.id,
+    employee_id: row.employee_id,
+    employee_name: emp?.full_name ?? '',
+    requested_amount_pesewas: cedisToPesewas(row.requested_amount),
+    fee_amount_pesewas: cedisToPesewas(row.fee_amount),
+    net_disbursed_pesewas: cedisToPesewas(row.net_disbursed),
+    status: row.status as AdvanceRequest['status'],
+    requested_at: row.requested_at,
+    disbursed_at: row.disbursed_at,
+  }
+}
+
+const PAGE_SIZE = 50
+
+export async function listAdvances(
+  employerId: string,
+  filters: AdvanceFilters = {},
+): Promise<PaginatedAdvances> {
+  const { status, from, to, page = 1 } = filters
+  const offset = (page - 1) * PAGE_SIZE
+
+  let query = supabase
     .from('advance_requests')
     .select(
       'id, employee_id, requested_amount, fee_amount, net_disbursed, status, requested_at, disbursed_at, employees!inner(full_name)',
+      { count: 'exact' },
     )
     .eq('employer_id', employerId)
     .order('requested_at', { ascending: false })
-    .limit(10)
+    .range(offset, offset + PAGE_SIZE - 1)
+
+  if (status && status !== 'all') query = query.eq('status', status)
+  if (from) query = query.gte('requested_at', from)
+  if (to) query = query.lte('requested_at', `${to}T23:59:59.999Z`)
+
+  const { data, error, count } = await query
 
   if (error) {
-    logger.error({ err: error, employerId }, 'failed to list recent advances')
+    logger.error({ err: error, employerId }, 'failed to list advances')
     throw new AppError('ADVANCE_LIST_FAILED', 500, 'Could not load advances')
   }
 
-  return (data as AdvanceRowWithEmployee[]).map((row) => {
-    const emp = Array.isArray(row.employees) ? row.employees[0] : row.employees
-    return {
-      id: row.id,
-      employee_id: row.employee_id,
-      employee_name: emp?.full_name ?? '',
-      requested_amount_pesewas: Math.round(row.requested_amount * PESEWAS_PER_CEDI) as MoneyPesewas,
-      fee_amount_pesewas: Math.round(row.fee_amount * PESEWAS_PER_CEDI) as MoneyPesewas,
-      net_disbursed_pesewas: Math.round(row.net_disbursed * PESEWAS_PER_CEDI) as MoneyPesewas,
-      status: row.status as AdvanceRequest['status'],
-      requested_at: row.requested_at,
-      disbursed_at: row.disbursed_at,
-    }
+  return {
+    advances: (data as AdvanceRowWithEmployee[]).map(rowToAdvanceRequest),
+    total: count ?? 0,
+    page,
+    pageSize: PAGE_SIZE,
+  }
+}
+
+export async function retryAdvance(
+  advanceId: string,
+  employerId: string,
+): Promise<RetryAdvanceInfo> {
+  const { data: advance, error } = await supabase
+    .from('advance_requests')
+    .select(
+      'id, employer_id, employee_id, requested_amount, net_disbursed, employees!inner(momo_number, network)',
+    )
+    .eq('id', advanceId)
+    .eq('employer_id', employerId)
+    .eq('status', 'failed')
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, advanceId }, 'retryAdvance: db error')
+    throw new AppError('ADVANCE_RETRY_FAILED', 500, 'Could not retry advance')
+  }
+  if (!advance) {
+    throw new AppError('ADVANCE_NOT_FOUND', 404, 'Advance not found or not in failed state')
+  }
+
+  const row = advance as unknown as AdvanceRowForRetry
+  const emp = Array.isArray(row.employees) ? row.employees[0] : row.employees
+  if (!emp) {
+    throw new AppError('ADVANCE_RETRY_FAILED', 500, 'Could not find employee for retry')
+  }
+
+  const externalRef = `wagr-adv-${crypto.randomUUID()}`
+  await debitFloat(employerId, row.requested_amount)
+
+  const { error: updateErr } = await supabase
+    .from('advance_requests')
+    .update({ status: 'pending', moolre_external_ref: externalRef, failure_reason: null })
+    .eq('id', advanceId)
+
+  if (updateErr) {
+    await refundFloat(employerId, row.requested_amount).catch((err) =>
+      logger.error({ err, employerId, advanceId }, 'float refund after retry update failure'),
+    )
+    logger.error({ err: updateErr, advanceId }, 'retryAdvance: update failed')
+    throw new AppError('ADVANCE_RETRY_FAILED', 500, 'Could not reset advance for retry')
+  }
+
+  await audit({
+    action: 'advance_retried',
+    actor: 'employer',
+    employerId,
+    employeeId: row.employee_id,
+    metadata: { advance_request_id: advanceId, new_external_ref: externalRef },
   })
+
+  return {
+    advanceId,
+    externalRef,
+    netCedis: row.net_disbursed,
+    requestedCedis: row.requested_amount,
+    momoNumber: emp.momo_number,
+    network: emp.network,
+  }
+}
+
+export async function listRecentAdvances(employerId: string): Promise<AdvanceRequest[]> {
+  const result = await listAdvances(employerId, { page: 1 })
+  return result.advances.slice(0, 10)
 }
 
 export async function getDashboardSummary(
