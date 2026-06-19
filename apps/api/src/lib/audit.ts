@@ -24,6 +24,7 @@ export const AUDIT_ACTIONS = [
   'float_funding_failed',
   'advance_pattern_flagged',
   'advance_pattern_cleared',
+  'advance_pattern_dismissed',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

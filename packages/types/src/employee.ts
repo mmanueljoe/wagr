@@ -30,6 +30,9 @@ export const setEmployeeActiveSchema = z.object({
 export type SetEmployeeActiveInput = z.infer<typeof setEmployeeActiveSchema>
 
 // Public shape returned from /employees endpoints. All money in pesewas.
+// `credit_flag*` fields surface the "advance pattern" signal from
+// advance-pattern-service. UI labels these as "advance pattern", never
+// "credit risk" — see docs/specs/feature-ai.md "Advance Pattern Flag".
 export interface Employee {
   id: string
   full_name: string
@@ -39,5 +42,7 @@ export interface Employee {
   start_date: string
   is_active: boolean
   credit_flag: boolean
+  credit_flag_reason: string | null
+  credit_flag_at: string | null
   created_at: string
 }

@@ -26,7 +26,7 @@ export async function createEmployee(
       start_date: input.start_date,
     })
     .select(
-      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, created_at',
+      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, credit_flag_reason, credit_flag_at, created_at',
     )
     .single()
 
@@ -66,7 +66,7 @@ export async function setEmployeeActive(
     .eq('id', employeeId)
     .eq('employer_id', employerId)
     .select(
-      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, created_at',
+      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, credit_flag_reason, credit_flag_at, created_at',
     )
     .maybeSingle()
 
@@ -217,7 +217,7 @@ export async function listEmployees(employerId: string): Promise<Employee[]> {
   const { data, error } = await supabase
     .from('employees')
     .select(
-      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, created_at',
+      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, credit_flag_reason, credit_flag_at, created_at',
     )
     .eq('employer_id', employerId)
     .order('created_at', { ascending: false })
@@ -239,6 +239,8 @@ interface EmployeeRow {
   start_date: string
   is_active: boolean
   credit_flag: boolean
+  credit_flag_reason: string | null
+  credit_flag_at: string | null
   created_at: string
 }
 
@@ -254,6 +256,46 @@ function rowToEmployee(row: EmployeeRow): Employee {
     start_date: row.start_date,
     is_active: row.is_active,
     credit_flag: row.credit_flag,
+    credit_flag_reason: row.credit_flag_reason,
+    credit_flag_at: row.credit_flag_at,
     created_at: row.created_at,
   }
+}
+
+// Employer-initiated flag dismissal. Clears the flag entirely; if the
+// advance pattern still matches when the worker takes another advance,
+// advance-pattern-service will re-raise it. See feature-dashboard.md
+// "Advance Pattern Flags" — UX departure from the spec's "acknowledged"
+// state is intentional (simpler, no schema migration; pattern recurrence
+// already drives the icon back on).
+export async function dismissEmployeeFlag(
+  employerId: string,
+  employeeId: string,
+): Promise<Employee> {
+  const { data, error } = await supabase
+    .from('employees')
+    .update({ credit_flag: false, credit_flag_reason: null, credit_flag_at: null })
+    .eq('id', employeeId)
+    .eq('employer_id', employerId)
+    .select(
+      'id, full_name, momo_number, network, monthly_salary, start_date, is_active, credit_flag, credit_flag_reason, credit_flag_at, created_at',
+    )
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, employerId, employeeId }, 'failed to dismiss advance-pattern flag')
+    throw new AppError('FLAG_DISMISS_FAILED', 500, 'Could not dismiss flag')
+  }
+  if (!data) {
+    throw new AppError('EMPLOYEE_NOT_FOUND', 404, 'Worker not found')
+  }
+
+  await audit({
+    action: 'advance_pattern_dismissed',
+    actor: 'employer',
+    employerId,
+    employeeId,
+  })
+
+  return rowToEmployee(data)
 }
