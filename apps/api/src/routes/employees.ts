@@ -1,6 +1,11 @@
-import { createEmployeeSchema, setEmployeeActiveSchema } from '@wagr/types'
+import {
+  bulkCreateEmployeesSchema,
+  createEmployeeSchema,
+  setEmployeeActiveSchema,
+} from '@wagr/types'
 import { Router } from 'express'
 import {
+  bulkCreateEmployeesHandler,
   createEmployeeHandler,
   listEmployeesHandler,
   setEmployeeActiveHandler,
@@ -15,6 +20,12 @@ employeesRouter.post(
   requireAuth,
   validateBody(createEmployeeSchema),
   createEmployeeHandler,
+)
+employeesRouter.post(
+  '/employees/bulk',
+  requireAuth,
+  validateBody(bulkCreateEmployeesSchema),
+  bulkCreateEmployeesHandler,
 )
 employeesRouter.get('/employees', requireAuth, listEmployeesHandler)
 employeesRouter.patch(

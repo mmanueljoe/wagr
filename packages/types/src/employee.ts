@@ -29,6 +29,17 @@ export const setEmployeeActiveSchema = z.object({
 
 export type SetEmployeeActiveInput = z.infer<typeof setEmployeeActiveSchema>
 
+export const bulkCreateEmployeesSchema = z.object({
+  employees: z.array(createEmployeeSchema).min(1).max(500),
+})
+
+export type BulkCreateEmployeesInput = z.infer<typeof bulkCreateEmployeesSchema>
+
+export interface BulkCreateResult {
+  inserted: number
+  failed: { index: number; reason: string }[]
+}
+
 // Public shape returned from /employees endpoints. All money in pesewas.
 export interface Employee {
   id: string

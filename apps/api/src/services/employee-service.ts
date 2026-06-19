@@ -1,8 +1,15 @@
-import type { CreateEmployeeInput, Employee, EmployeeNetwork, MoneyPesewas } from '@wagr/types'
+import type {
+  BulkCreateResult,
+  CreateEmployeeInput,
+  Employee,
+  EmployeeNetwork,
+  MoneyPesewas,
+} from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { supabase } from '../lib/supabase'
+import { validateMoMoNetwork } from '../lib/validators'
 
 // Marshalling boundary for money: pesewas (integer) in our code, numeric cedis
 // in Postgres. Convert here so the rest of the codebase never sees raw cedis.
@@ -53,6 +60,46 @@ export async function createEmployee(
   })
 
   return rowToEmployee(data)
+}
+
+// Inserts each row independently so failures are collected per-index rather
+// than rolling back the whole batch. allSettled gives us parallelism without
+// losing the per-row error detail.
+export async function bulkCreateEmployees(
+  employerId: string,
+  employees: CreateEmployeeInput[],
+): Promise<BulkCreateResult> {
+  const results = await Promise.allSettled(
+    employees.map((emp) => {
+      if (!validateMoMoNetwork(emp.momo_number, emp.network)) {
+        return Promise.reject(
+          new AppError(
+            'MOMO_NETWORK_MISMATCH',
+            422,
+            `MoMo number ${emp.momo_number} does not match network ${emp.network}`,
+          ),
+        )
+      }
+      return createEmployee(employerId, emp)
+    }),
+  )
+
+  let inserted = 0
+  const failed: BulkCreateResult['failed'] = []
+
+  for (const [i, r] of results.entries()) {
+    if (r.status === 'fulfilled') {
+      inserted++
+    } else {
+      const err = r.reason
+      failed.push({
+        index: i,
+        reason: err instanceof AppError ? err.message : 'Failed to insert row',
+      })
+    }
+  }
+
+  return { inserted, failed }
 }
 
 export async function setEmployeeActive(
