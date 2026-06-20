@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import { env } from '../lib/env'
 import { logger } from '../lib/logger'
 import { completeFloatTopUp } from '../services/float-funding-service'
+import { completePeriodClose } from '../services/repayment-service'
 
 // Moolre POSTs here for Payments status changes (float funding, payday
 // recovery — both use the Payments API). Transfers use polling instead;
@@ -49,11 +50,17 @@ export async function moolreWebhookHandler(req: Request, res: Response): Promise
     return
   }
 
-  // Dispatch by externalref prefix. Float top-ups today; payday recovery
-  // will register `wagr-repay-` here when [payday-recovery] lands.
+  // Dispatch by externalref prefix.
   try {
     if (externalRef.startsWith('wagr-float-')) {
       await completeFloatTopUp({
+        externalRef,
+        txStatus,
+        ...(data.transactionid ? { moolreTransactionId: data.transactionid } : {}),
+        ...(typeof data.message === 'string' ? { failureReason: data.message } : {}),
+      })
+    } else if (externalRef.startsWith('wagr-repay-')) {
+      await completePeriodClose({
         externalRef,
         txStatus,
         ...(data.transactionid ? { moolreTransactionId: data.transactionid } : {}),

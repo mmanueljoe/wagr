@@ -10,6 +10,7 @@ import { dashboardRouter } from './routes/dashboard'
 import { employeesRouter } from './routes/employees'
 import { floatRouter } from './routes/float'
 import { healthRouter } from './routes/health'
+import { periodCloseRouter } from './routes/period-close'
 import { ussdRouter } from './routes/ussd'
 import { webhooksRouter } from './routes/webhooks'
 
@@ -27,6 +28,7 @@ app.use(employeesRouter)
 app.use(advancesRouter)
 app.use(floatRouter)
 app.use(dashboardRouter)
+app.use(periodCloseRouter)
 app.use(ussdRouter)
 app.use(webhooksRouter)
 
