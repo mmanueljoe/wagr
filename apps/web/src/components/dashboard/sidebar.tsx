@@ -29,7 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/employees', label: 'Employees', icon: Users },
   { href: '/dashboard/advances', label: 'Advances', icon: CreditCard },
-  { href: '/dashboard/period-close', label: 'Close Period', icon: Calendar, comingSoon: true },
+  { href: '/dashboard/period-close', label: 'Close Period', icon: Calendar },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings, comingSoon: true },
 ]
 

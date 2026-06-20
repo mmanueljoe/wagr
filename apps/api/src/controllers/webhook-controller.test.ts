@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as floatService from '../services/float-funding-service'
+import * as repaymentService from '../services/repayment-service'
 import { moolreWebhookHandler } from './webhook-controller'
 
 const GOOD_SECRET = 'test-webhook-secret'
@@ -157,5 +158,49 @@ describe('moolreWebhookHandler', () => {
     await moolreWebhookHandler(req, res as unknown as Response)
 
     expect(res._status).toBe(200)
+  })
+
+  it('routes wagr-repay- prefix to completePeriodClose on terminal txstatus 1', async () => {
+    const repaySpy = vi.spyOn(repaymentService, 'completePeriodClose').mockResolvedValue()
+    vi.spyOn(floatService, 'completeFloatTopUp').mockResolvedValue()
+    const req = makeReq({
+      data: {
+        secret: GOOD_SECRET,
+        externalref: 'wagr-repay-emp-123-1718000000',
+        txstatus: 1,
+        transactionid: 'mr-tx-9',
+      },
+    })
+    const res = makeRes()
+
+    await moolreWebhookHandler(req, res as unknown as Response)
+
+    expect(res._status).toBe(200)
+    expect(repaySpy).toHaveBeenCalledExactlyOnceWith({
+      externalRef: 'wagr-repay-emp-123-1718000000',
+      txStatus: 1,
+      moolreTransactionId: 'mr-tx-9',
+    })
+  })
+
+  it('passes failure reason on wagr-repay- failure', async () => {
+    const repaySpy = vi.spyOn(repaymentService, 'completePeriodClose').mockResolvedValue()
+    const req = makeReq({
+      data: {
+        secret: GOOD_SECRET,
+        externalref: 'wagr-repay-emp-123-1718000000',
+        txstatus: 2,
+        message: 'Insufficient balance on payer wallet',
+      },
+    })
+    const res = makeRes()
+
+    await moolreWebhookHandler(req, res as unknown as Response)
+
+    expect(repaySpy).toHaveBeenCalledExactlyOnceWith({
+      externalRef: 'wagr-repay-emp-123-1718000000',
+      txStatus: 2,
+      failureReason: 'Insufficient balance on payer wallet',
+    })
   })
 })
