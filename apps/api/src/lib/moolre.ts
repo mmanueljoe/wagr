@@ -181,6 +181,39 @@ export async function sendSms(input: SendSmsInput): Promise<void> {
   })
 }
 
+// ── WhatsApp ─────────────────────────────────────────────────────────────
+
+export interface SendWhatsAppTemplateInput {
+  to: string // Recipient phone, local format (e.g. 0241235993).
+  templateName: string // Meta-approved template name, e.g. 'wagr_advance_summary_v1'.
+  language: string // Language code Meta has approved for the template, e.g. 'en'.
+  placeholders: string[] // Ordered values for {{1}}..{{N}} in the template body.
+  ref?: string // Optional caller-side reference for delivery tracking.
+}
+
+// POST /open/whatsapp/send with X-API-VASKEY (the WhatsApp service's per-
+// instance key — NOT the SMS one). WhatsApp Business disallows freeform
+// outbound messages, so every send goes through a Meta-approved template.
+// Throws AppError on transport/HTTP failures — callers in notification flows
+// swallow + audit-log so delivery never blocks settlement.
+export async function sendWhatsAppTemplate(input: SendWhatsAppTemplateInput): Promise<void> {
+  const body = {
+    template_name: input.templateName,
+    language: input.language,
+    messages: [
+      {
+        recipient: input.to,
+        placeholders: input.placeholders,
+        ...(input.ref ? { ref: input.ref } : {}),
+      },
+    ],
+  }
+
+  await postJson('/open/whatsapp/send', body, {
+    'X-API-VASKEY': env.MOOLRE_WHATSAPP_VASKEY,
+  })
+}
+
 // ── HTTP layer ───────────────────────────────────────────────────────────
 
 interface MoolreEnvelope {

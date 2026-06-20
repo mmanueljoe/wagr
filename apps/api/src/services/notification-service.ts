@@ -1,6 +1,14 @@
 import { type MoneyPesewas, formatGhs } from '@wagr/types'
+import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
-import { sendSms } from '../lib/moolre'
+import { sendSms, sendWhatsAppTemplate } from '../lib/moolre'
+import { generatePayslipClosingLine } from '../lib/payslip-gpt'
+
+// WhatsApp advance summary template — pending Meta approval via the Moolre
+// portal. Until approved, live sends will 4xx; nothing else breaks.
+// See docs/architecture/moolre-api-reference.md (WhatsApp API → Templates).
+const ADVANCE_SUMMARY_TEMPLATE = 'wagr_advance_summary_v1'
+const ADVANCE_SUMMARY_LANGUAGE = 'en'
 
 // All worker-facing notifications go through this module. Format here,
 // call Moolre underneath, swallow + log delivery failures. See
@@ -58,6 +66,69 @@ export async function notifyFloatFunded(input: FloatFundedInput): Promise<void> 
 export async function notifyFloatFundingFailed(input: FloatFundingFailedInput): Promise<void> {
   const message = `Your Wagr float top-up of ${formatGhs(input.amountPesewas)} could not be processed. Please try again or contact support.`
   await safeSend(input.phone, message, 'float_funding_failed')
+}
+
+export interface WorkerAdvanceSummaryInput {
+  employerId: string
+  employeeId: string
+  momoNumber: string
+  workerFullName: string
+  employerName: string
+  payPeriodLabel: string // e.g. "June 2026"
+  totalAdvancesPesewas: MoneyPesewas
+  ref?: string
+}
+
+// Sends one worker's advance summary over WhatsApp. Best-effort by design —
+// the spec is explicit that delivery failure must not block or reverse the
+// repayment. We log + audit each outcome so ops can chase undelivered sends.
+export async function sendWorkerAdvanceSummary(input: WorkerAdvanceSummaryInput): Promise<void> {
+  const firstName = input.workerFullName.trim().split(/\s+/)[0] ?? input.workerFullName
+  const closingLine = await generatePayslipClosingLine({
+    workerFirstName: firstName,
+    payPeriodLabel: input.payPeriodLabel,
+  })
+
+  const placeholders = [
+    firstName,
+    input.payPeriodLabel,
+    input.employerName,
+    formatGhs(input.totalAdvancesPesewas),
+    closingLine,
+  ]
+
+  try {
+    await sendWhatsAppTemplate({
+      to: input.momoNumber,
+      templateName: ADVANCE_SUMMARY_TEMPLATE,
+      language: ADVANCE_SUMMARY_LANGUAGE,
+      placeholders,
+      ...(input.ref ? { ref: input.ref } : {}),
+    })
+    await audit({
+      action: 'whatsapp_summary_sent',
+      actor: 'system',
+      employerId: input.employerId,
+      employeeId: input.employeeId,
+      metadata: { template: ADVANCE_SUMMARY_TEMPLATE, ref: input.ref ?? null },
+    })
+  } catch (err) {
+    logger.error(
+      { err, employerId: input.employerId, employeeId: input.employeeId },
+      'whatsapp advance summary delivery failed',
+    )
+    await audit({
+      action: 'whatsapp_summary_failed',
+      actor: 'system',
+      employerId: input.employerId,
+      employeeId: input.employeeId,
+      metadata: {
+        template: ADVANCE_SUMMARY_TEMPLATE,
+        ref: input.ref ?? null,
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      },
+    })
+  }
 }
 
 async function safeSend(to: string, message: string, context: string): Promise<void> {
