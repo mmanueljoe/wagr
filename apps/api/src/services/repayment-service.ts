@@ -12,6 +12,7 @@ import { logger } from '../lib/logger'
 import { initiatePayment } from '../lib/moolre'
 import { supabase } from '../lib/supabase'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
+import { sendWorkerAdvanceSummary } from './notification-service'
 
 // Payday recovery — the "money back in" side of Wagr's loop.
 //
@@ -407,13 +408,134 @@ async function markRepaymentCollected(
     },
   })
 
-  // TODO [whatsapp-worker-payslip]: fan out advance summaries to each worker
-  // who took an advance this period. The repayment is settled at this point
-  // so any send failure is logged and ignored — never blocks settlement.
-  logger.info(
-    { repaymentId, employerId, workerCount: advanceIds.length },
-    'period close collected; whatsapp summaries pending [whatsapp-worker-payslip]',
+  // The repayment is settled at this point. Fan-out runs after the audit
+  // log so even if the process is killed mid-send, the books are consistent.
+  // Failures inside the fan-out are swallowed + audit-logged per worker.
+  fanOutAdvanceSummaries(repaymentId, employerId, advanceIds).catch((err) => {
+    logger.error(
+      { err, repaymentId, employerId },
+      'whatsapp advance summary fan-out crashed unexpectedly',
+    )
+  })
+}
+
+interface AdvanceSummaryRow {
+  employee_id: string
+  requested_amount: number
+  employees: {
+    full_name: string
+    momo_number: string
+  } | null
+}
+
+async function fanOutAdvanceSummaries(
+  repaymentId: string,
+  employerId: string,
+  advanceIds: string[],
+): Promise<void> {
+  if (advanceIds.length === 0) return
+
+  const [employerName, payDate, advances] = await Promise.all([
+    getEmployerName(employerId),
+    getEmployerPayDate(employerId),
+    listAdvancesWithEmployee(advanceIds),
+  ])
+
+  if (!employerName) {
+    logger.error({ employerId, repaymentId }, 'cannot fan out summaries: employer name missing')
+    return
+  }
+
+  const payPeriodLabel = formatPayPeriodLabel(getCurrentPayPeriod(payDate, new Date()).end)
+
+  interface PerWorker {
+    employeeId: string
+    fullName: string
+    momoNumber: string
+    totalPesewas: MoneyPesewas
+  }
+
+  const byEmployee = new Map<string, PerWorker>()
+  for (const row of advances) {
+    if (!row.employees) continue
+    const grossPesewas = cedisToPesewas(row.requested_amount)
+    const existing = byEmployee.get(row.employee_id)
+    if (existing) {
+      existing.totalPesewas = (existing.totalPesewas + grossPesewas) as MoneyPesewas
+    } else {
+      byEmployee.set(row.employee_id, {
+        employeeId: row.employee_id,
+        fullName: row.employees.full_name,
+        momoNumber: row.employees.momo_number,
+        totalPesewas: grossPesewas,
+      })
+    }
+  }
+
+  await Promise.allSettled(
+    Array.from(byEmployee.values()).map((worker) =>
+      sendWorkerAdvanceSummary({
+        employerId,
+        employeeId: worker.employeeId,
+        momoNumber: worker.momoNumber,
+        workerFullName: worker.fullName,
+        employerName,
+        payPeriodLabel,
+        totalAdvancesPesewas: worker.totalPesewas,
+        ref: `wagr-summary-${repaymentId}-${worker.employeeId}`,
+      }),
+    ),
   )
+}
+
+async function getEmployerName(employerId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('employers')
+    .select('company_name')
+    .eq('id', employerId)
+    .maybeSingle()
+  if (error || !data) return null
+  return data.company_name
+}
+
+async function listAdvancesWithEmployee(advanceIds: string[]): Promise<AdvanceSummaryRow[]> {
+  const { data, error } = await supabase
+    .from('advance_requests')
+    .select('employee_id, requested_amount, employees!inner(full_name, momo_number)')
+    .in('id', advanceIds)
+
+  if (error) {
+    logger.error(
+      { err: error, advanceCount: advanceIds.length },
+      'failed to load advances for summary fan-out',
+    )
+    return []
+  }
+
+  return ((data ?? []) as unknown[]).map((row) => {
+    const r = row as {
+      employee_id: string
+      requested_amount: number
+      employees:
+        | { full_name: string; momo_number: string }
+        | { full_name: string; momo_number: string }[]
+        | null
+    }
+    const employee = Array.isArray(r.employees) ? r.employees[0] : r.employees
+    return {
+      employee_id: r.employee_id,
+      requested_amount: r.requested_amount,
+      employees: employee ?? null,
+    }
+  })
+}
+
+function formatPayPeriodLabel(endOfPeriod: Date): string {
+  return endOfPeriod.toLocaleString('en-GH', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 async function markRepaymentFailed(

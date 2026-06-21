@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../errors/app-error'
-import { getTransferStatus, initiatePayment, initiateTransfer, sendSms } from './moolre'
+import {
+  getTransferStatus,
+  initiatePayment,
+  initiateTransfer,
+  sendSms,
+  sendWhatsAppTemplate,
+} from './moolre'
 
 // We mock global fetch so this file doesn't talk to Moolre. Env is set in
 // vitest's setup; if MOOLRE_BASE_URL/credentials aren't present these tests
@@ -260,6 +266,80 @@ describe('sendSms', () => {
   it('throws AppError on a non-OK HTTP response', async () => {
     mockFetchOnce({ status: 0, code: 'SMS99', message: 'no credits' }, { ok: false, status: 500 })
     await expect(sendSms({ to: '0241235993', message: 'Hi' })).rejects.toBeInstanceOf(AppError)
+  })
+})
+
+describe('sendWhatsAppTemplate', () => {
+  const WA_ENVELOPE = {
+    status: 1,
+    code: 'WAS01',
+    message: 'Accepted',
+    data: {},
+  }
+
+  it('posts to /open/whatsapp/send with X-API-VASKEY and the template payload', async () => {
+    const fetchMock = mockFetchOnce(WA_ENVELOPE)
+
+    await sendWhatsAppTemplate({
+      to: '0241235993',
+      templateName: 'wagr_advance_summary_v1',
+      language: 'en',
+      placeholders: ['Abena', 'June 2026', 'Accra Wellness Clinic', 'GHS 300.00', 'Take care.'],
+      ref: 'wagr-summary-rep-123-emp-456',
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/open\/whatsapp\/send$/)
+    expect(init.method).toBe('POST')
+
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-API-USER']).toBeTruthy()
+    expect(headers['X-API-VASKEY']).toBeTruthy()
+    // SMS VAS key and account-level Transfers key MUST NOT leak here.
+    expect(headers['X-API-KEY']).toBeUndefined()
+    expect(headers['X-API-PUBKEY']).toBeUndefined()
+
+    const body = JSON.parse(init.body as string)
+    expect(body).toMatchObject({
+      template_name: 'wagr_advance_summary_v1',
+      language: 'en',
+      messages: [
+        {
+          recipient: '0241235993',
+          placeholders: ['Abena', 'June 2026', 'Accra Wellness Clinic', 'GHS 300.00', 'Take care.'],
+          ref: 'wagr-summary-rep-123-emp-456',
+        },
+      ],
+    })
+  })
+
+  it('omits ref when not provided', async () => {
+    mockFetchOnce(WA_ENVELOPE)
+    await sendWhatsAppTemplate({
+      to: '0241235993',
+      templateName: 'wagr_advance_summary_v1',
+      language: 'en',
+      placeholders: ['Abena', 'June 2026', 'X', 'GHS 1.00', 'Hi.'],
+    })
+    const fetchSpy = global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }
+    const body = JSON.parse((fetchSpy.mock.calls.at(-1)?.[1].body as string) ?? '{}')
+    expect(body.messages[0].ref).toBeUndefined()
+  })
+
+  it('throws AppError on a non-OK HTTP response', async () => {
+    mockFetchOnce(
+      { status: 0, code: 'WAS401', message: 'template not approved' },
+      { ok: false, status: 400 },
+    )
+    await expect(
+      sendWhatsAppTemplate({
+        to: '0241235993',
+        templateName: 'wagr_advance_summary_v1',
+        language: 'en',
+        placeholders: ['a', 'b', 'c', 'd', 'e'],
+      }),
+    ).rejects.toBeInstanceOf(AppError)
   })
 })
 

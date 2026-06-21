@@ -28,6 +28,8 @@ export const AUDIT_ACTIONS = [
   'period_close_initiated',
   'period_close_collected',
   'period_close_failed',
+  'whatsapp_summary_sent',
+  'whatsapp_summary_failed',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]
