@@ -12,7 +12,11 @@ import { logger } from '../lib/logger'
 import { initiatePayment } from '../lib/moolre'
 import { supabase } from '../lib/supabase'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
-import { sendWorkerAdvanceSummary } from './notification-service'
+import {
+  type EmployerSummaryBreakdownItem,
+  sendEmployerAdvanceSummary,
+  sendWorkerAdvanceSummary,
+} from './notification-service'
 
 // Payday recovery — the "money back in" side of Wagr's loop.
 //
@@ -435,14 +439,14 @@ async function fanOutAdvanceSummaries(
 ): Promise<void> {
   if (advanceIds.length === 0) return
 
-  const [employerName, payDate, advances] = await Promise.all([
-    getEmployerName(employerId),
+  const [employerProfile, payDate, advances] = await Promise.all([
+    getEmployerProfile(employerId),
     getEmployerPayDate(employerId),
     listAdvancesWithEmployee(advanceIds),
   ])
 
-  if (!employerName) {
-    logger.error({ employerId, repaymentId }, 'cannot fan out summaries: employer name missing')
+  if (!employerProfile) {
+    logger.error({ employerId, repaymentId }, 'cannot fan out summaries: employer profile missing')
     return
   }
 
@@ -472,30 +476,59 @@ async function fanOutAdvanceSummaries(
     }
   }
 
-  await Promise.allSettled(
-    Array.from(byEmployee.values()).map((worker) =>
-      sendWorkerAdvanceSummary({
-        employerId,
-        employeeId: worker.employeeId,
-        momoNumber: worker.momoNumber,
-        workerFullName: worker.fullName,
-        employerName,
-        payPeriodLabel,
-        totalAdvancesPesewas: worker.totalPesewas,
-        ref: `wagr-summary-${repaymentId}-${worker.employeeId}`,
-      }),
-    ),
+  const workers = Array.from(byEmployee.values())
+
+  const workerSends = workers.map((worker) =>
+    sendWorkerAdvanceSummary({
+      employerId,
+      employeeId: worker.employeeId,
+      momoNumber: worker.momoNumber,
+      workerFullName: worker.fullName,
+      employerName: employerProfile.companyName,
+      payPeriodLabel,
+      totalAdvancesPesewas: worker.totalPesewas,
+      ref: `wagr-summary-${repaymentId}-${worker.employeeId}`,
+    }),
   )
+
+  const totalRecoveredPesewas = workers.reduce<number>(
+    (sum, w) => sum + w.totalPesewas,
+    0,
+  ) as MoneyPesewas
+
+  const breakdown: EmployerSummaryBreakdownItem[] = workers.map((w) => ({
+    workerFirstName: firstName(w.fullName),
+    totalAdvancesPesewas: w.totalPesewas,
+  }))
+
+  const employerSend = sendEmployerAdvanceSummary({
+    employerId,
+    phone: employerProfile.phone,
+    employerDisplayName: employerProfile.companyName,
+    payPeriodLabel,
+    workerCount: workers.length,
+    totalRecoveredPesewas,
+    breakdown,
+    ref: `wagr-employer-summary-${repaymentId}`,
+  })
+
+  await Promise.allSettled([...workerSends, employerSend])
 }
 
-async function getEmployerName(employerId: string): Promise<string | null> {
+async function getEmployerProfile(
+  employerId: string,
+): Promise<{ companyName: string; phone: string } | null> {
   const { data, error } = await supabase
     .from('employers')
-    .select('company_name')
+    .select('company_name, phone')
     .eq('id', employerId)
     .maybeSingle()
   if (error || !data) return null
-  return data.company_name
+  return { companyName: data.company_name, phone: data.phone }
+}
+
+function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? fullName
 }
 
 async function listAdvancesWithEmployee(advanceIds: string[]): Promise<AdvanceSummaryRow[]> {

@@ -8,6 +8,7 @@ import {
   notifyAdvanceDisbursed,
   notifyAdvanceFailed,
   notifyAdvanceRequested,
+  sendEmployerAdvanceSummary,
   sendWorkerAdvanceSummary,
 } from './notification-service'
 
@@ -153,6 +154,97 @@ describe('sendWorkerAdvanceSummary', () => {
       actor: 'system',
       employerId: 'emp-1',
       employeeId: 'wkr-1',
+    })
+  })
+})
+
+describe('sendEmployerAdvanceSummary', () => {
+  const EMPLOYER_PHONE = '0244000111'
+  const BASE_INPUT = {
+    employerId: 'emp-1',
+    phone: EMPLOYER_PHONE,
+    employerDisplayName: 'Accra Wellness Clinic',
+    payPeriodLabel: 'June 2026',
+    workerCount: 2,
+    totalRecoveredPesewas: 55_000 as MoneyPesewas,
+    breakdown: [
+      { workerFirstName: 'Abena', totalAdvancesPesewas: 30_000 as MoneyPesewas },
+      { workerFirstName: 'Kofi', totalAdvancesPesewas: 25_000 as MoneyPesewas },
+    ],
+    ref: 'wagr-employer-summary-rep-1',
+  }
+
+  it('sends the employer template with itemised breakdown + closing line', async () => {
+    vi.spyOn(payslipGpt, 'generateEmployerClosingLine').mockResolvedValue(
+      'Thanks for backing your team this month.',
+    )
+    const wa = vi.spyOn(moolre, 'sendWhatsAppTemplate').mockResolvedValue()
+    vi.spyOn(audit, 'audit').mockResolvedValue()
+
+    await sendEmployerAdvanceSummary(BASE_INPUT)
+
+    expect(wa).toHaveBeenCalledExactlyOnceWith({
+      to: EMPLOYER_PHONE,
+      templateName: 'wagr_employer_summary_v1',
+      language: 'en',
+      placeholders: [
+        'Accra Wellness Clinic',
+        'June 2026',
+        '2',
+        'GHS 550.00',
+        '- Abena: GHS 300.00\n- Kofi: GHS 250.00',
+        'Thanks for backing your team this month.',
+      ],
+      ref: 'wagr-employer-summary-rep-1',
+    })
+  })
+
+  it('passes only the display name + period + worker count to the LLM (no amounts)', async () => {
+    const closing = vi
+      .spyOn(payslipGpt, 'generateEmployerClosingLine')
+      .mockResolvedValue('Nice work.')
+    vi.spyOn(moolre, 'sendWhatsAppTemplate').mockResolvedValue()
+    vi.spyOn(audit, 'audit').mockResolvedValue()
+
+    await sendEmployerAdvanceSummary(BASE_INPUT)
+
+    expect(closing).toHaveBeenCalledExactlyOnceWith({
+      employerDisplayName: 'Accra Wellness Clinic',
+      payPeriodLabel: 'June 2026',
+      workerCount: 2,
+    })
+  })
+
+  it('audits whatsapp_summary_sent on success with the employer template name', async () => {
+    vi.spyOn(payslipGpt, 'generateEmployerClosingLine').mockResolvedValue('Hi.')
+    vi.spyOn(moolre, 'sendWhatsAppTemplate').mockResolvedValue()
+    const auditSpy = vi.spyOn(audit, 'audit').mockResolvedValue()
+
+    await sendEmployerAdvanceSummary(BASE_INPUT)
+
+    expect(auditSpy).toHaveBeenCalledOnce()
+    expect(auditSpy.mock.calls[0]?.[0]).toMatchObject({
+      action: 'whatsapp_summary_sent',
+      actor: 'system',
+      employerId: 'emp-1',
+      metadata: { template: 'wagr_employer_summary_v1' },
+    })
+  })
+
+  it('swallows WhatsApp delivery failures and audits whatsapp_summary_failed', async () => {
+    vi.spyOn(payslipGpt, 'generateEmployerClosingLine').mockResolvedValue('Hi.')
+    vi.spyOn(moolre, 'sendWhatsAppTemplate').mockRejectedValue(
+      new AppError('MOOLRE_HTTP_FAILED', 502, 'template not approved'),
+    )
+    const auditSpy = vi.spyOn(audit, 'audit').mockResolvedValue()
+
+    await expect(sendEmployerAdvanceSummary(BASE_INPUT)).resolves.toBeUndefined()
+
+    expect(auditSpy).toHaveBeenCalledOnce()
+    expect(auditSpy.mock.calls[0]?.[0]).toMatchObject({
+      action: 'whatsapp_summary_failed',
+      actor: 'system',
+      employerId: 'emp-1',
     })
   })
 })

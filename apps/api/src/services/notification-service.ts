@@ -2,13 +2,14 @@ import { type MoneyPesewas, formatGhs } from '@wagr/types'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
 import { sendSms, sendWhatsAppTemplate } from '../lib/moolre'
-import { generatePayslipClosingLine } from '../lib/payslip-gpt'
+import { generateEmployerClosingLine, generatePayslipClosingLine } from '../lib/payslip-gpt'
 
-// WhatsApp advance summary template — pending Meta approval via the Moolre
-// portal. Until approved, live sends will 4xx; nothing else breaks.
-// See docs/architecture/moolre-api-reference.md (WhatsApp API → Templates).
+// WhatsApp templates — both pending Meta approval via the Moolre portal.
+// Until approved, live sends will 4xx; nothing else breaks. See
+// docs/architecture/moolre-api-reference.md (WhatsApp API → Templates).
 const ADVANCE_SUMMARY_TEMPLATE = 'wagr_advance_summary_v1'
-const ADVANCE_SUMMARY_LANGUAGE = 'en'
+const EMPLOYER_SUMMARY_TEMPLATE = 'wagr_employer_summary_v1'
+const WHATSAPP_LANGUAGE = 'en'
 
 // All worker-facing notifications go through this module. Format here,
 // call Moolre underneath, swallow + log delivery failures. See
@@ -101,7 +102,7 @@ export async function sendWorkerAdvanceSummary(input: WorkerAdvanceSummaryInput)
     await sendWhatsAppTemplate({
       to: input.momoNumber,
       templateName: ADVANCE_SUMMARY_TEMPLATE,
-      language: ADVANCE_SUMMARY_LANGUAGE,
+      language: WHATSAPP_LANGUAGE,
       placeholders,
       ...(input.ref ? { ref: input.ref } : {}),
     })
@@ -124,6 +125,77 @@ export async function sendWorkerAdvanceSummary(input: WorkerAdvanceSummaryInput)
       employeeId: input.employeeId,
       metadata: {
         template: ADVANCE_SUMMARY_TEMPLATE,
+        ref: input.ref ?? null,
+        error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+      },
+    })
+  }
+}
+
+export interface EmployerSummaryBreakdownItem {
+  workerFirstName: string
+  totalAdvancesPesewas: MoneyPesewas
+}
+
+export interface EmployerAdvanceSummaryInput {
+  employerId: string
+  phone: string // WhatsApp recipient — employer's `phone` column.
+  employerDisplayName: string // First name of contact OR company short name.
+  payPeriodLabel: string
+  workerCount: number
+  totalRecoveredPesewas: MoneyPesewas
+  breakdown: EmployerSummaryBreakdownItem[]
+  ref?: string
+}
+
+// Sends one summary to the employer over WhatsApp after a period close is
+// settled. Best-effort by design — failure never blocks or reverses the
+// recovery. Numbers come from the database; the LLM only writes the closing
+// line. See docs/specs/feature-notifications.md.
+export async function sendEmployerAdvanceSummary(
+  input: EmployerAdvanceSummaryInput,
+): Promise<void> {
+  const closingLine = await generateEmployerClosingLine({
+    employerDisplayName: input.employerDisplayName,
+    payPeriodLabel: input.payPeriodLabel,
+    workerCount: input.workerCount,
+  })
+
+  const breakdownText = input.breakdown
+    .map((item) => `- ${item.workerFirstName}: ${formatGhs(item.totalAdvancesPesewas)}`)
+    .join('\n')
+
+  const placeholders = [
+    input.employerDisplayName,
+    input.payPeriodLabel,
+    String(input.workerCount),
+    formatGhs(input.totalRecoveredPesewas),
+    breakdownText,
+    closingLine,
+  ]
+
+  try {
+    await sendWhatsAppTemplate({
+      to: input.phone,
+      templateName: EMPLOYER_SUMMARY_TEMPLATE,
+      language: WHATSAPP_LANGUAGE,
+      placeholders,
+      ...(input.ref ? { ref: input.ref } : {}),
+    })
+    await audit({
+      action: 'whatsapp_summary_sent',
+      actor: 'system',
+      employerId: input.employerId,
+      metadata: { template: EMPLOYER_SUMMARY_TEMPLATE, ref: input.ref ?? null },
+    })
+  } catch (err) {
+    logger.error({ err, employerId: input.employerId }, 'whatsapp employer summary delivery failed')
+    await audit({
+      action: 'whatsapp_summary_failed',
+      actor: 'system',
+      employerId: input.employerId,
+      metadata: {
+        template: EMPLOYER_SUMMARY_TEMPLATE,
         ref: input.ref ?? null,
         error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
       },
