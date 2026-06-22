@@ -20,6 +20,13 @@
   --color-wagr-gray: #888780;
   --color-wagr-gray-light: #f1efe8;
 
+  /* USSD screen tokens — scoped exception to the Wagr palette. Used ONLY in
+     the UssdScreen component on the landing page to render the authentic
+     green-on-black look of Ghanaian feature-phone USSD overlays. Not for
+     general UI. */
+  --color-ussd-green: #00ff41;
+  --color-ussd-bg: #000000;
+
   --font-heading: var(--font-heading), "Space Grotesk", sans-serif;
   --font-body: var(--font-body), "Inter", sans-serif;
 
@@ -98,5 +105,27 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
+  }
+}
+
+/* USSD screen typing animation — each line fades in with a staggered delay
+   driven by inline style. Lines render as opacity 0 until their delay hits.
+   Honours prefers-reduced-motion. */
+@keyframes ussd-line-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ussd-line {
+  opacity: 0;
+  animation: ussd-line-in 220ms ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ussd-line {
+    animation: none;
+    opacity: 1;
   }
 }
