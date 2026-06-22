@@ -49,6 +49,56 @@ export async function generatePayslipClosingLine(input: PayslipClosingInput): Pr
   }
 }
 
+export interface EmployerClosingInput {
+  employerDisplayName: string // First name of the contact OR company short name.
+  payPeriodLabel: string
+  workerCount: number // How many of their workers took advances this period.
+}
+
+export async function generateEmployerClosingLine(input: EmployerClosingInput): Promise<string> {
+  try {
+    const raw = await callGemini(buildEmployerPrompt(input))
+    const cleaned = sanitise(raw)
+    if (!cleaned) {
+      logger.warn(
+        { employerDisplayName: input.employerDisplayName },
+        'employer closing line empty after sanitise',
+      )
+      return FALLBACK_CLOSING_LINE
+    }
+    return cleaned
+  } catch (err) {
+    logger.warn(
+      { err, employerDisplayName: input.employerDisplayName },
+      'employer closing line generation failed; using fallback',
+    )
+    return FALLBACK_CLOSING_LINE
+  }
+}
+
+function buildEmployerPrompt(input: EmployerClosingInput): string {
+  return [
+    'You write a single short warm closing line for a Ghanaian employer reading',
+    "a summary of their workers' Wagr advances this period.",
+    '',
+    'STRICT RULES:',
+    '- Output ONLY the closing line. No quotes, no preamble, no sign-off.',
+    '- One sentence. No more than 22 words.',
+    '- Address the reader once by name.',
+    '- Plain warm English — peer to peer, not formal.',
+    '- DO NOT mention any specific GHS amounts or numbers.',
+    '- DO NOT include emoji.',
+    '- DO NOT say "Wagr" — the template already signs off.',
+    '',
+    'EMPLOYER CONTEXT:',
+    `- Name to address: ${input.employerDisplayName}`,
+    `- Pay period: ${input.payPeriodLabel}`,
+    `- Workers who took an advance this period: ${input.workerCount}`,
+    '',
+    'Closing line:',
+  ].join('\n')
+}
+
 function buildPrompt(input: PayslipClosingInput): string {
   return [
     "You write a single short warm closing line for a Ghanaian worker's payslip.",
