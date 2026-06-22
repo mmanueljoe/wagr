@@ -34,6 +34,12 @@ Both developers must use these token names — no hardcoded hex values anywhere 
   --color-wagr-gray:        #888780;   /* Muted text, placeholders, disabled states */
   --color-wagr-gray-light:  #F1EFE8;   /* Subtle backgrounds, dividers */
 
+  /* USSD screen — scoped exception, landing page only.
+     Renders the authentic green-on-black of Ghanaian feature-phone USSD
+     overlays inside the <UssdScreen /> component. Not for general UI. */
+  --color-ussd-green:       #00ff41;
+  --color-ussd-bg:          #000000;
+
   /* Font families — wired to the next/font CSS variables set in layout.tsx */
   --font-heading: var(--font-heading), "Space Grotesk", sans-serif;
   --font-body:    var(--font-body),    "Inter",         sans-serif;
