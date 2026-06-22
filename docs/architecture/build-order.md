@@ -124,15 +124,17 @@ This sprint contains the highest-risk work. USSD is the core product differentia
 
 | Order | Story | What it unlocks |
 |---|---|---|
-| 1 | [landing-structure] | All landing page sections |
-| 2 | [landing-features-bento] | Feature visibility |
-| 3 | [landing-social-proof] | Trust signals |
+| 1 | [landing-structure] | Whole landing page — see note below |
+| ~~2~~ | ~~[landing-features-bento]~~ | Absorbed by [landing-structure] (design choice) |
+| ~~3~~ | ~~[landing-social-proof]~~ | Absorbed by [landing-structure] (design choice) |
 | 4 | [landing-demo-video] | Product demonstration |
 | 5 | Error states and edge cases | Robust demo |
 | 6 | Mobile responsiveness pass | Judging day reliability |
 | 7 | [explainer-video] | Submission asset |
 
-**Why this order:** Landing page structure first because all sections depend on the layout. Video section last because the demo video needs to be recorded from the working product.
+**Why two slugs got absorbed:** [landing-structure] shipped as a single-scroll narrative (a worker's day in three real artefacts → "It was already hers" → the math beat → small CTA). The design deliberately dropped both the bento grid and testimonial cards — bento because it reads as the AI-template fintech look we wanted to avoid, testimonials because fabricating quotes pre-launch undermines the page's whole credibility play. The landing-page acceptance criteria those two slugs covered (features visibility, trust signalling) are met inside [landing-structure] through real product screens and honest scale framing.
+
+**Why the rest of the order:** Landing first because all polish work assumes it exists. Video last because the demo video needs to be recorded from the working product.
 
 **Sprint 5 done when:** Landing page is live. All error states handled. Product is mobile responsive. Explainer video is recorded.
 

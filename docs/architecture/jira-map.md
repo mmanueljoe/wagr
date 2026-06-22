@@ -85,10 +85,10 @@ When Jira renumbers a story (delete + recreate, project reset, etc.), only the *
 
 | Slug | Title | Jira ID |
 |---|---|---|
-| landing-structure | Landing page structure + six sections | |
+| landing-structure | Landing page (day-as-narrative artifact-stack, replaces bento + testimonials) | |
 | landing-demo-video | Landing demo video / animated mockup | |
-| landing-features-bento | Features bento grid section | |
-| landing-social-proof | Social proof testimonials section | |
+| ~~landing-features-bento~~ | Absorbed by `landing-structure` — design choice dropped the bento grid in favour of a narrative artifact-stack | |
+| ~~landing-social-proof~~ | Absorbed by `landing-structure` — no fabricated testimonials pre-launch; trust signalled through honesty about scale | |
 
 ## Demo + Submission (Epic: Demo Preparation and Submission)
 
