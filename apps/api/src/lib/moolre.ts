@@ -117,16 +117,43 @@ export interface InitiatePaymentInput {
   externalRef: string // Idempotency key — same ref never charges twice.
 }
 
+// Moolre Payments has a 3-step OTP flow before the actual MoMo PIN prompt:
+//   1. Initial call (no otpcode)            → code TP14 / 200_OTP_REQ
+//        Moolre SMSes an OTP to the payer.
+//   2. Resubmit with the otpcode field      → code 200_OTP_SUCCESS
+//   3. Final call (no otpcode again)        → code 200_PAYMENT_REQ
+//        Moolre actually sends the MoMo PIN prompt.
+//
+// `acknowledged` (HTTP-level success) is true for all three — the `code`
+// field is what tells us which stage we're at. Some merchants get the OTP
+// step removed by Moolre (see docs); when that happens the initial call
+// returns 200_PAYMENT_REQ directly and the two extra steps don't fire.
+// See docs/architecture/moolre-api-reference.md (Payment API → OTP flow).
+export type PaymentState =
+  | 'otp_required' // TP14 / 200_OTP_REQ — Moolre SMS'd an OTP, awaiting payer
+  | 'otp_verified' // 200_OTP_SUCCESS — OTP matched, ready to trigger prompt
+  | 'prompt_sent' // 200_PAYMENT_REQ — MoMo PIN prompt is on the way
+  | 'rejected' // anything else with status !== 1
+
 export interface InitiatePaymentResult {
-  acknowledged: boolean // True when Moolre accepted the request and sent the
-  // PIN prompt to the payer's phone. Final result arrives via webhook.
+  state: PaymentState
+  // Convenience: true when Moolre HTTP-200'd. Existing callers (period-close)
+  // still use this; new OTP flow looks at `state` instead.
+  acknowledged: boolean
   rawCode: string
 }
 
-// POST /open/transact/payment with X-API-PUBKEY. Triggers the MoMo PIN
-// prompt on the payer's phone. Final txstatus is delivered later via the
-// Payments webhook — never wait for it here.
-export async function initiatePayment(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
+export interface InitiatePaymentInputWithOtp extends InitiatePaymentInput {
+  // Set only on the second of the three OTP-flow calls. Moolre returns
+  // 200_OTP_SUCCESS when this matches the code they SMSed the payer.
+  otpcode?: string
+}
+
+// POST /open/transact/payment with X-API-PUBKEY. See PaymentState above
+// for the three-stage flow.
+export async function initiatePayment(
+  input: InitiatePaymentInputWithOtp,
+): Promise<InitiatePaymentResult> {
   const body = {
     type: 1,
     channel: PAYMENT_CHANNEL[input.network],
@@ -135,16 +162,39 @@ export async function initiatePayment(input: InitiatePaymentInput): Promise<Init
     amount: input.amount.toFixed(2),
     externalref: input.externalRef,
     accountnumber: env.MOOLRE_ACCOUNT_NUMBER,
+    ...(input.otpcode ? { otpcode: input.otpcode } : {}),
   }
 
   const response = await postJson('/open/transact/payment', body, {
     'X-API-PUBKEY': env.MOOLRE_API_PUBKEY,
   })
 
+  const rawCode = typeof response.code === 'string' ? response.code : 'UNKNOWN'
   return {
+    state: derivePaymentState(response.status === 1, rawCode),
     acknowledged: response.status === 1,
-    rawCode: typeof response.code === 'string' ? response.code : 'UNKNOWN',
+    rawCode,
   }
+}
+
+function derivePaymentState(httpOk: boolean, code: string): PaymentState {
+  if (!httpOk) return 'rejected'
+  // Code formats Moolre uses (per docs at docs.moolre.com/#/initiate-payment):
+  //   TP14, 200_OTP_REQ  — OTP needed
+  //   200_OTP_SUCCESS    — OTP verified
+  //   200_PAYMENT_REQ    — prompt sent
+  if (code === 'TP14' || code === '200_OTP_REQ' || code.includes('OTP_REQ')) {
+    return 'otp_required'
+  }
+  if (code === '200_OTP_SUCCESS' || code.includes('OTP_SUCCESS')) {
+    return 'otp_verified'
+  }
+  if (code === '200_PAYMENT_REQ' || code.includes('PAYMENT_REQ')) {
+    return 'prompt_sent'
+  }
+  // Unknown success codes — treat as rejected so we don't silently progress
+  // a flow we don't understand. Better to fail loud than swallow money.
+  return 'rejected'
 }
 
 // ── SMS ──────────────────────────────────────────────────────────────────

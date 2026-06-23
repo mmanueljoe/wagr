@@ -117,12 +117,15 @@ Moolre POSTs this to your configured callback URL whenever a user dials.
 | Field | Type | Meaning |
 |---|---|---|
 | `sessionId` | string | Unique session identifier from Moolre. **Use this as the Redis key**, not the phone number. |
-| `new` | boolean | `true` on first hit of a session, `false` on subsequent hits |
+| `new` | boolean (per docs) / integer (actual) | Moolre's docs say `true`/`false`. The sandbox actually sends `1`/`0`. The schema in `packages/types/src/ussd.ts` accepts both shapes (plus string forms) and normalises to a real boolean. |
 | `msisdn` | string | Worker's mobile number (no `+`, includes country code, e.g. `233...`) |
-| `network` | integer | Worker's network (USSD network codes — see table above) |
-| `message` | string | What the user typed in this step |
-| `extension` | string | Your assigned USSD extension code |
+| `network` | integer | Worker's network (USSD network codes — see table above). |
+| `message` | string | What the user typed in this step. |
+| `extension` | string | Your assigned USSD extension code. |
 | `data` | string | Anything dialled in the initial code after the extension. E.g. `*203*109*11005#` → `data = "11005"`. Useful for deep-linking. |
+| `ussd` | string (undocumented) | Moolre's docs don't list this, but the gateway also sends the base USSD short code as a separate field (e.g. `"919"` for `*919*4003#`). Schema ignores it — extra keys pass through. |
+
+**Body parsing note.** Moolre POSTs a JSON body to the callback URL (see the request example above, taken verbatim from their docs at `docs.moolre.com/#/ussd`). The gateway has been observed sending it with a `Content-Type: application/x-www-form-urlencoded` header — likely a misconfiguration since the body itself is unambiguously JSON and the docs document it as JSON. The api therefore mounts `express.json({ type: '*/*' })` on `/ussd` BEFORE the global body parsers (see `apps/api/src/index.ts`), so the body parses regardless of what the header says. Don't change this without first confirming Moolre has fixed the header upstream.
 
 ### Response (us → Moolre)
 

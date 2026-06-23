@@ -117,8 +117,9 @@ export async function initiatePeriodClose(
 
   const { momoNumber, network } = await getEmployerMomoDetails(employerId)
 
+  let paymentResult: Awaited<ReturnType<typeof initiatePayment>>
   try {
-    await initiatePayment({
+    paymentResult = await initiatePayment({
       amount: totalCedis,
       payer: momoNumber,
       network,
@@ -141,6 +142,23 @@ export async function initiatePeriodClose(
       502,
       'Could not start pay-period recovery with Moolre',
     )
+  }
+
+  // Same caveat as initiateFloatTopUp: Moolre may HTTP-200 with a body
+  // that says "rejected" (acknowledged=false). Without this check, the
+  // repayment row sits at pending forever, the dashboard spins, and no
+  // MoMo prompt is ever sent to the employer.
+  if (!paymentResult.acknowledged) {
+    const reason = `Moolre rejected the recovery request (code ${paymentResult.rawCode})`
+    logger.warn(
+      { repaymentId: row.id, employerId, moolreCode: paymentResult.rawCode },
+      'moolre payment not acknowledged — marking repayment failed',
+    )
+    await supabase
+      .from('repayments')
+      .update({ status: 'failed', failure_reason: reason })
+      .eq('id', row.id)
+    throw new AppError('MOOLRE_PAYMENT_REJECTED', 502, reason)
   }
 
   await audit({

@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import type { Request, Response } from 'express'
 import { logger } from '../lib/logger'
 import { initiateTransfer } from '../lib/moolre'
+import { supabase } from '../lib/supabase'
 import { pollUntilTerminal } from '../lib/transfer-polling'
 import { type FlowResult, type NewSessionContext, handleCallback } from '../lib/ussd-flow'
 import { deleteSession, getSession, setSession } from '../lib/ussd-session'
@@ -20,6 +21,9 @@ import {
   findEmployeeForDisbursement,
   setEmployeePinHash,
 } from '../services/employee-service'
+import { notifyAdvanceFailed } from '../services/notification-service'
+
+const PESEWAS_PER_CEDI = 100
 
 const BCRYPT_ROUNDS = 12
 const PIN_REGEX = /^\d{4}$/
@@ -100,11 +104,10 @@ async function buildNewSessionContext(
     today: now,
   })
 
-  const outstandingPesewas = await getCurrentPeriodDisbursedPesewas(
-    employee.id,
-    employee.employer_pay_date,
-    now,
-  )
+  const [outstandingPesewas, floatAvailablePesewas] = await Promise.all([
+    getCurrentPeriodDisbursedPesewas(employee.id, employee.employer_pay_date, now),
+    getEmployerFloatPesewas(employee.employer_id),
+  ])
 
   const maxAdvancePesewas = calculateMaxAdvance(earnedWagePesewas, outstandingPesewas)
 
@@ -112,7 +115,25 @@ async function buildNewSessionContext(
     employee,
     earned_wage_pesewas: earnedWagePesewas,
     max_advance_pesewas: maxAdvancePesewas,
+    float_available_pesewas: floatAvailablePesewas,
   }
+}
+
+// Single-purpose read of employers.float_balance (cedis) → pesewas. Direct
+// query rather than reusing getFloatStatus from float-funding-service so
+// the USSD init stays at one round-trip alongside the wage calc.
+async function getEmployerFloatPesewas(employerId: string): Promise<MoneyPesewas> {
+  const { data, error } = await supabase
+    .from('employers')
+    .select('float_balance')
+    .eq('id', employerId)
+    .maybeSingle()
+
+  if (error || !data) {
+    logger.error({ err: error, employerId }, 'failed to read employer float for ussd init')
+    return 0 as MoneyPesewas
+  }
+  return Math.round(data.float_balance * PESEWAS_PER_CEDI) as MoneyPesewas
 }
 
 function zeroContext(employee: EmployeeForUssd): NewSessionContext {
@@ -120,6 +141,7 @@ function zeroContext(employee: EmployeeForUssd): NewSessionContext {
     employee,
     earned_wage_pesewas: 0 as MoneyPesewas,
     max_advance_pesewas: 0 as MoneyPesewas,
+    float_available_pesewas: 0 as MoneyPesewas,
   }
 }
 
@@ -173,6 +195,10 @@ async function runDisbursement(
     })
   } catch (err) {
     logger.error({ err, employeeId: sideEffect.employeeId }, 'failed to create advance request')
+    // No advance row exists, so markAdvanceFailed can't notify. The USSD
+    // session has already ended ("Sending...") — SMS is the only channel
+    // left to tell the worker something went wrong. Best-effort.
+    await notifyAdvanceFailed({ momoNumber: sideEffect.momoNumber })
     return
   }
 

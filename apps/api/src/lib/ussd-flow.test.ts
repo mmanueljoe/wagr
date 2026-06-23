@@ -41,6 +41,7 @@ function context(overrides: Partial<NewSessionContext> = {}): NewSessionContext 
     employee: employee(),
     earned_wage_pesewas: 150_000 as MoneyPesewas,
     max_advance_pesewas: 75_000 as MoneyPesewas,
+    float_available_pesewas: 500_000 as MoneyPesewas,
     ...overrides,
   }
 }
@@ -56,6 +57,7 @@ const BALANCE_SESSION: UssdSession = {
   is_first_use: false,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
+  float_available_pesewas: 500_000 as MoneyPesewas,
 }
 
 const AMOUNT_SESSION: UssdSession = {
@@ -69,6 +71,7 @@ const AMOUNT_SESSION: UssdSession = {
   is_first_use: false,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
+  float_available_pesewas: 500_000 as MoneyPesewas,
 }
 
 const PIN_NEW_SESSION: UssdSession = {
@@ -82,6 +85,7 @@ const PIN_NEW_SESSION: UssdSession = {
   is_first_use: true,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
+  float_available_pesewas: 500_000 as MoneyPesewas,
 }
 
 describe('handleCallback — session init', () => {
@@ -151,6 +155,49 @@ describe('handleCallback — session init', () => {
     expect(result.response.reply).toBe(false)
     expect(result.response.message).toContain('no advance available')
     expect(result.nextSession).toBeNull()
+  })
+
+  it("ENDs with float-empty message when the employer's float can't cover the minimum advance", () => {
+    const result = handleCallback(
+      callback({ new: true }),
+      null,
+      context({ float_available_pesewas: 4_999 as MoneyPesewas }),
+      null,
+      NOW,
+    )
+    expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain("employer's Wagr float is empty")
+    expect(result.nextSession).toBeNull()
+  })
+
+  it('worker-side cap exhausted takes precedence over float-empty when both apply', () => {
+    const result = handleCallback(
+      callback({ new: true }),
+      null,
+      context({
+        max_advance_pesewas: 0 as MoneyPesewas,
+        float_available_pesewas: 0 as MoneyPesewas,
+      }),
+      null,
+      NOW,
+    )
+    expect(result.response.reply).toBe(false)
+    expect(result.response.message).toContain('no advance available')
+  })
+
+  it('clamps max_advance to the smaller of personal cap and float available', () => {
+    const result = handleCallback(
+      callback({ new: true }),
+      null,
+      context({
+        max_advance_pesewas: 75_000 as MoneyPesewas,
+        float_available_pesewas: 30_000 as MoneyPesewas,
+      }),
+      null,
+      NOW,
+    )
+    expect(result.response.message).toContain('Max advance: GHS 300.00')
+    expect(result.nextSession?.max_advance_pesewas).toBe(30_000)
   })
 
   it('treats a missing redis session the same as new', () => {
@@ -251,6 +298,7 @@ const CONFIRM_SESSION: UssdSession = {
   is_first_use: false,
   earned_wage_pesewas: 150_000 as MoneyPesewas,
   max_advance_pesewas: 75_000 as MoneyPesewas,
+  float_available_pesewas: 500_000 as MoneyPesewas,
   requested_amount_pesewas: 20_000 as MoneyPesewas,
   fee_pesewas: 600 as MoneyPesewas,
   net_disbursement_pesewas: 19_400 as MoneyPesewas,
