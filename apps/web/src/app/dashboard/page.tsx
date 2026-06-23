@@ -23,8 +23,9 @@ export default function DashboardPage() {
           </p>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <FundFloatCard />
+        <FundFloatCard />
+
+        <div className="grid gap-4 sm:grid-cols-3">
           <StatCard
             icon={CreditCard}
             label="Advances this period"

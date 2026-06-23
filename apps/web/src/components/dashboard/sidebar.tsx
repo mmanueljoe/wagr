@@ -3,35 +3,11 @@
 import { Button } from '@/components/ui/button'
 import { useLogout } from '@/hooks/use-logout'
 import { cn } from '@/lib/utils'
-import {
-  Calendar,
-  CreditCard,
-  LayoutDashboard,
-  LogOut,
-  type LucideIcon,
-  Settings,
-  Users,
-} from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-
-interface NavItem {
-  href: string
-  label: string
-  icon: LucideIcon
-  // Routes that aren't built yet stay in the sidebar so the dashboard looks
-  // complete in demos, but they don't navigate — clicking shows a toast.
-  comingSoon?: boolean
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/employees', label: 'Employees', icon: Users },
-  { href: '/dashboard/advances', label: 'Advances', icon: CreditCard },
-  { href: '/dashboard/period-close', label: 'Close Period', icon: Calendar },
-  { href: '/dashboard/settings', label: 'Settings', icon: Settings, comingSoon: true },
-]
+import { NAV_ITEMS, type NavItem, isActive } from './nav-items'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -109,10 +85,4 @@ function SidebarLink({ item, active }: Readonly<{ item: NavItem; active: boolean
       <span>{item.label}</span>
     </Link>
   )
-}
-
-function isActive(item: NavItem, pathname: string | null): boolean {
-  if (!pathname) return false
-  if (item.href === '/dashboard') return pathname === '/dashboard'
-  return pathname === item.href || pathname.startsWith(`${item.href}/`)
 }

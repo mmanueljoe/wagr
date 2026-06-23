@@ -205,6 +205,8 @@ export type Database = {
           float_balance: number
           id: string
           industry: string
+          momo_number: string | null
+          network: string | null
           pay_date: number
           phone: string
           updated_at: string
@@ -216,6 +218,8 @@ export type Database = {
           float_balance?: number
           id: string
           industry: string
+          momo_number?: string | null
+          network?: string | null
           pay_date: number
           phone: string
           updated_at?: string
@@ -227,11 +231,63 @@ export type Database = {
           float_balance?: number
           id?: string
           industry?: string
+          momo_number?: string | null
+          network?: string | null
           pay_date?: number
           phone?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      float_top_ups: {
+        Row: {
+          amount: number
+          completed_at: string | null
+          created_at: string
+          employer_id: string
+          failure_reason: string | null
+          id: string
+          initiated_at: string
+          moolre_external_ref: string
+          moolre_transaction_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          completed_at?: string | null
+          created_at?: string
+          employer_id: string
+          failure_reason?: string | null
+          id?: string
+          initiated_at?: string
+          moolre_external_ref: string
+          moolre_transaction_id?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          completed_at?: string | null
+          created_at?: string
+          employer_id?: string
+          failure_reason?: string | null
+          id?: string
+          initiated_at?: string
+          moolre_external_ref?: string
+          moolre_transaction_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "float_top_ups_employer_id_fkey"
+            columns: ["employer_id"]
+            isOneToOne: false
+            referencedRelation: "employers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       repayments: {
         Row: {
@@ -279,6 +335,35 @@ export type Database = {
             columns: ["employer_id"]
             isOneToOne: false
             referencedRelation: "employers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wagr_ledger: {
+        Row: {
+          accrued_at: string
+          advance_request_id: string
+          fee_amount: number
+          id: string
+        }
+        Insert: {
+          accrued_at?: string
+          advance_request_id: string
+          fee_amount: number
+          id?: string
+        }
+        Update: {
+          accrued_at?: string
+          advance_request_id?: string
+          fee_amount?: number
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wagr_ledger_advance_request_id_fkey"
+            columns: ["advance_request_id"]
+            isOneToOne: false
+            referencedRelation: "advance_requests"
             referencedColumns: ["id"]
           },
         ]

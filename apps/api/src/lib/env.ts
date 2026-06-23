@@ -39,6 +39,42 @@ export const env = createEnv({
     WEB_URL: z.string().url().default('http://localhost:3000'),
 
     SENTRY_DSN: z.string().url().optional(),
+
+    // Advance reconciler — periodically resolves advances that the initial
+    // polling budget couldn't terminate. See lib/advance-reconciler.ts.
+    // Defaults: run every 5 min, treat anything pending > 90s as stuck,
+    // force-fail (refund float, SMS worker) after 24 hours.
+    RECONCILER_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5 * 60 * 1000),
+    RECONCILER_STUCK_AFTER_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(90 * 1000),
+    RECONCILER_FORCE_FAIL_AFTER_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(24 * 60 * 60 * 1000),
+
+    // Float top-up reconciler — same shape as the advance reconciler but
+    // for the money-IN side (employer pre-funding via Moolre Payments).
+    // Webhooks should land within seconds, so STUCK_AFTER is tight (60s)
+    // and FORCE_FAIL is short (1h). Past FORCE_FAIL we assume the webhook
+    // is never coming and mark the top-up failed.
+    FLOAT_TOPUP_RECONCILER_STUCK_AFTER_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60 * 1000),
+    FLOAT_TOPUP_RECONCILER_FORCE_FAIL_AFTER_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60 * 60 * 1000),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

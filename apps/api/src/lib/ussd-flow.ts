@@ -28,7 +28,11 @@ import { calculateFee } from './wage-engine/fee'
 export interface NewSessionContext {
   employee: EmployeeForUssd
   earned_wage_pesewas: MoneyPesewas
+  // Personal-side cap from the wage engine (earned * 50% - outstanding).
   max_advance_pesewas: MoneyPesewas
+  // Employer-side cap — current float balance in pesewas. Combined with the
+  // personal cap inside enterBalance.
+  float_available_pesewas: MoneyPesewas
 }
 
 export type SideEffect =
@@ -71,6 +75,8 @@ const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
 const PIN_ENTRY_PROMPT = 'Enter your 4-digit PIN:'
 const TOO_MANY_ATTEMPTS = 'Too many wrong PIN attempts. Try again later.'
 const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
+const EMPLOYER_FLOAT_EMPTY =
+  "Your employer's Wagr float is empty. Please ask them to top up, then try again."
 const AMOUNT_INVALID = 'Enter a whole cedi amount, e.g. 100.'
 const AMOUNT_TOO_LOW = `Minimum advance is ${formatGhs(MIN_ADVANCE_PESEWAS)}.`
 const CANCELLED = 'Cancelled. No advance created.'
@@ -122,6 +128,7 @@ function initSession(context: NewSessionContext | null, now: Date): FlowResult {
     ussd_pin_hash: context.employee.ussd_pin_hash,
     earned_wage_pesewas: context.earned_wage_pesewas,
     max_advance_pesewas: context.max_advance_pesewas,
+    float_available_pesewas: context.float_available_pesewas,
   }
 
   if (context.employee.ussd_pin_hash === null) {
@@ -275,11 +282,30 @@ function advanceSubmittedMessage(session: UssdSession): string {
 // up front so we don't show "max GHS 0" and prompt for a keypress that
 // will only fail at the amount step. Used by both fresh-PIN-already-set
 // sessions and the pin-setup-completes-then-balance chain.
+//
+// Two distinct "no advance" reasons surface here with different messages:
+//   - worker-side cap exhausted (no earned wage yet, or already at the 50%
+//     ceiling) → NO_BALANCE_AVAILABLE — they need to wait until payday
+//   - employer's float can't fund the minimum advance → EMPLOYER_FLOAT_EMPTY
+//     — the worker should tell their employer to top up
+//
+// When both caps are positive, the worker can only request up to the smaller
+// of the two. We clamp max_advance_pesewas on the session here so downstream
+// steps (amount, confirm) automatically respect the cap.
 function enterBalance(session: UssdSession): FlowResult {
   if (session.max_advance_pesewas <= 0) {
     return { response: end(NO_BALANCE_AVAILABLE), nextSession: null }
   }
-  return { response: reply(balanceScreen(session)), nextSession: session }
+  if (session.float_available_pesewas < MIN_ADVANCE_PESEWAS) {
+    return { response: end(EMPLOYER_FLOAT_EMPTY), nextSession: null }
+  }
+
+  const effectiveMax = Math.min(
+    session.max_advance_pesewas,
+    session.float_available_pesewas,
+  ) as MoneyPesewas
+  const clamped: UssdSession = { ...session, max_advance_pesewas: effectiveMax }
+  return { response: reply(balanceScreen(clamped)), nextSession: clamped }
 }
 
 function balanceScreen(session: UssdSession): string {

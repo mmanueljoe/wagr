@@ -44,6 +44,11 @@ export interface InitiatedTopUp {
   id: string
   externalRef: string
   amountCedis: number
+  // Where Moolre's 3-step Payments flow is at after the initial call:
+  //   'otp_required' — Moolre SMSed an OTP to the payer; row is at status
+  //                    'awaiting_otp' until POST /float/fund/otp completes
+  //   'prompt_sent'  — MoMo PIN prompt is on its way; row is at 'pending'
+  state: 'otp_required' | 'prompt_sent'
 }
 
 export interface FloatStatus {
@@ -51,6 +56,9 @@ export interface FloatStatus {
   momoNumber: string | null
   network: EmployeeNetwork | null
   hasPendingTopUp: boolean
+  // Non-null when there's an in-flight top-up sitting in the OTP step.
+  // UI uses this to show the OTP input across page reloads.
+  awaitingOtpTopUp: { topUpId: string; amountPesewas: MoneyPesewas } | null
 }
 
 export async function getFloatStatus(employerId: string): Promise<FloatStatus> {
@@ -64,15 +72,33 @@ export async function getFloatStatus(employerId: string): Promise<FloatStatus> {
     throw new AppError('EMPLOYER_NOT_FOUND', 404, 'Employer not found')
   }
 
-  const { count, error: countErr } = await looseDb
-    .from('float_top_ups')
-    .select('id', { count: 'exact', head: true })
-    .eq('employer_id', employerId)
-    .eq('status', 'pending')
+  const [pendingCountResult, otpRowResult] = await Promise.all([
+    looseDb
+      .from('float_top_ups')
+      .select('id', { count: 'exact', head: true })
+      .eq('employer_id', employerId)
+      .eq('status', 'pending'),
+    looseDb
+      .from('float_top_ups')
+      .select('id, amount')
+      .eq('employer_id', employerId)
+      .eq('status', 'awaiting_otp')
+      .order('initiated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
 
-  if (countErr) {
-    logger.warn({ err: countErr, employerId }, 'failed to count pending float top-ups')
+  if (pendingCountResult.error) {
+    logger.warn(
+      { err: pendingCountResult.error, employerId },
+      'failed to count pending float top-ups',
+    )
   }
+  if (otpRowResult.error) {
+    logger.warn({ err: otpRowResult.error, employerId }, 'failed to fetch awaiting-otp top-up')
+  }
+
+  const otpRow = otpRowResult.data as { id: string; amount: number } | null
 
   return {
     balancePesewas: cedisToPesewas(employer.float_balance),
@@ -80,7 +106,10 @@ export async function getFloatStatus(employerId: string): Promise<FloatStatus> {
     network: isEmployeeNetwork(employer.network ?? '')
       ? (employer.network as EmployeeNetwork)
       : null,
-    hasPendingTopUp: (count ?? 0) > 0,
+    hasPendingTopUp: (pendingCountResult.count ?? 0) > 0,
+    awaitingOtpTopUp: otpRow
+      ? { topUpId: otpRow.id, amountPesewas: cedisToPesewas(otpRow.amount) }
+      : null,
   }
 }
 
@@ -113,8 +142,14 @@ export async function initiateFloatTopUp(input: InitiateFloatTopUpInput): Promis
     throw new AppError('FLOAT_TOPUP_CREATE_FAILED', 500, 'Could not create float top-up')
   }
 
+  logger.info(
+    { topUpId: data.id, employerId: input.employerId, amountCedis, network, externalRef },
+    'float top-up initiated — calling moolre payments',
+  )
+
+  let paymentResult: Awaited<ReturnType<typeof initiatePayment>>
   try {
-    await initiatePayment({
+    paymentResult = await initiatePayment({
       amount: amountCedis,
       payer: momoNumber,
       network,
@@ -136,6 +171,63 @@ export async function initiateFloatTopUp(input: InitiateFloatTopUpInput): Promis
     throw new AppError('MOOLRE_PAYMENT_FAILED', 502, 'Could not start float top-up with Moolre')
   }
 
+  // Branch on Moolre's payment state. `acknowledged` (HTTP success) is true
+  // for both otp_required AND prompt_sent — the `state` field tells us which.
+  // Anything else is treated as rejection.
+  if (paymentResult.state === 'rejected') {
+    const reason = `Moolre rejected the payment request (code ${paymentResult.rawCode})`
+    logger.warn(
+      { topUpId: data.id, employerId: input.employerId, moolreCode: paymentResult.rawCode },
+      'moolre payment rejected — marking top-up failed',
+    )
+    await looseDb
+      .from('float_top_ups')
+      .update({ status: 'failed', failure_reason: reason })
+      .eq('id', data.id)
+    throw new AppError('MOOLRE_PAYMENT_REJECTED', 502, reason)
+  }
+
+  // OTP step kicked in — Moolre SMS'd an OTP to the payer. We flip the row
+  // to 'awaiting_otp' so the UI knows to show the OTP input form. The user
+  // POSTs the OTP to /float/fund/otp to continue the flow.
+  if (paymentResult.state === 'otp_required') {
+    logger.info(
+      { topUpId: data.id, employerId: input.employerId, moolreCode: paymentResult.rawCode },
+      'moolre payment awaiting OTP — payer should receive an SMS shortly',
+    )
+    await looseDb
+      .from('float_top_ups')
+      .update({ status: 'awaiting_otp' })
+      .eq('id', data.id)
+      .eq('status', 'pending')
+
+    await audit({
+      action: 'float_funding_initiated',
+      actor: 'employer',
+      employerId: input.employerId,
+      metadata: {
+        float_top_up_id: data.id,
+        amount: amountCedis,
+        state: 'otp_required',
+      },
+    })
+
+    return { id: data.id, externalRef, amountCedis, state: 'otp_required' }
+  }
+
+  // state === 'prompt_sent' — Moolre skipped the OTP step (some merchants get
+  // it removed) and the MoMo prompt is already on its way. Row stays 'pending'
+  // (the default we inserted with) and we wait for the webhook.
+  logger.info(
+    {
+      topUpId: data.id,
+      employerId: input.employerId,
+      moolreCode: paymentResult.rawCode,
+      payerLast4: momoNumber.slice(-4),
+    },
+    'moolre payment prompt sent — awaiting webhook',
+  )
+
   await audit({
     action: 'float_funding_initiated',
     actor: 'employer',
@@ -143,10 +235,139 @@ export async function initiateFloatTopUp(input: InitiateFloatTopUpInput): Promis
     metadata: {
       float_top_up_id: data.id,
       amount: amountCedis,
+      state: 'prompt_sent',
     },
   })
 
-  return { id: data.id, externalRef, amountCedis }
+  return { id: data.id, externalRef, amountCedis, state: 'prompt_sent' }
+}
+
+export interface SubmitFloatTopUpOtpInput {
+  employerId: string
+  topUpId: string
+  otpcode: string
+}
+
+export interface SubmittedTopUpOtp {
+  topUpId: string
+  state: 'prompt_sent'
+}
+
+// Second leg of Moolre's 3-step Payments flow. Takes the OTP the payer
+// entered, resubmits to Moolre to verify (expecting otp_verified), then
+// calls a third time to actually trigger the MoMo PIN prompt (expecting
+// prompt_sent). On success, flips the row from 'awaiting_otp' to 'pending'
+// so the UI's existing polling can pick up the eventual webhook outcome.
+export async function submitFloatTopUpOtp(
+  input: SubmitFloatTopUpOtpInput,
+): Promise<SubmittedTopUpOtp> {
+  // Look up the row and verify ownership + state.
+  const { data: row, error: readErr } = await looseDb
+    .from('float_top_ups')
+    .select('id, employer_id, amount, moolre_external_ref, status')
+    .eq('id', input.topUpId)
+    .maybeSingle()
+
+  if (readErr || !row) {
+    throw new AppError('FLOAT_TOPUP_NOT_FOUND', 404, 'Top-up not found')
+  }
+  if (row.employer_id !== input.employerId) {
+    throw new AppError('FLOAT_TOPUP_NOT_FOUND', 404, 'Top-up not found')
+  }
+  if (row.status !== 'awaiting_otp') {
+    throw new AppError(
+      'FLOAT_TOPUP_WRONG_STATE',
+      409,
+      `Top-up is in '${row.status}' state — cannot submit OTP`,
+    )
+  }
+
+  const { momoNumber, network } = await getEmployerMomoOnly(input.employerId)
+
+  // Call 2: verify the OTP. Expect state='otp_verified'.
+  const verifyResult = await initiatePayment({
+    amount: row.amount,
+    payer: momoNumber,
+    network,
+    externalRef: row.moolre_external_ref,
+    otpcode: input.otpcode,
+  })
+
+  if (verifyResult.state !== 'otp_verified') {
+    // Could be otp_required again (wrong OTP) or rejected. Either way the
+    // user can retry — leave the row at 'awaiting_otp' so they can try
+    // again with a different OTP without starting over.
+    const reason =
+      verifyResult.state === 'otp_required'
+        ? 'OTP did not match'
+        : `Moolre rejected the OTP (code ${verifyResult.rawCode})`
+    logger.warn(
+      {
+        topUpId: row.id,
+        employerId: input.employerId,
+        state: verifyResult.state,
+        moolreCode: verifyResult.rawCode,
+      },
+      'moolre OTP verification failed',
+    )
+    throw new AppError('OTP_VERIFY_FAILED', 400, reason)
+  }
+
+  // Call 3: trigger the MoMo prompt. Expect state='prompt_sent'.
+  const promptResult = await initiatePayment({
+    amount: row.amount,
+    payer: momoNumber,
+    network,
+    externalRef: row.moolre_external_ref,
+  })
+
+  if (promptResult.state !== 'prompt_sent') {
+    // Unexpected: OTP verified but Moolre won't fire the prompt. Mark
+    // failed so the UI stops spinning.
+    const reason = `Moolre would not send the MoMo prompt after OTP (code ${promptResult.rawCode})`
+    logger.error(
+      { topUpId: row.id, employerId: input.employerId, state: promptResult.state },
+      'moolre prompt-send failed after OTP verification',
+    )
+    await looseDb
+      .from('float_top_ups')
+      .update({ status: 'failed', failure_reason: reason })
+      .eq('id', row.id)
+    throw new AppError('MOOLRE_PROMPT_FAILED', 502, reason)
+  }
+
+  // Flip awaiting_otp → pending so existing webhook + polling logic takes
+  // over from here. Guard with the prior status so a stale duplicate
+  // submission can't move a terminal row.
+  await looseDb
+    .from('float_top_ups')
+    .update({ status: 'pending' })
+    .eq('id', row.id)
+    .eq('status', 'awaiting_otp')
+
+  logger.info(
+    { topUpId: row.id, employerId: input.employerId },
+    'moolre payment prompt sent (post-OTP) — awaiting webhook',
+  )
+
+  return { topUpId: row.id, state: 'prompt_sent' }
+}
+
+// Lighter than ensureEmployerMomoDetails — assumes the row was set up
+// during the initial call so momo + network are already on the employer.
+async function getEmployerMomoOnly(
+  employerId: string,
+): Promise<{ momoNumber: string; network: 'mtn' | 'telecel' | 'at' }> {
+  const { data, error } = await looseDb
+    .from('employers')
+    .select('momo_number, network')
+    .eq('id', employerId)
+    .maybeSingle()
+
+  if (error || !data || !data.momo_number || !data.network) {
+    throw new AppError('EMPLOYER_NOT_FOUND', 404, 'Employer payment details not found')
+  }
+  return { momoNumber: data.momo_number, network: data.network }
 }
 
 export interface CompleteFloatTopUpInput {

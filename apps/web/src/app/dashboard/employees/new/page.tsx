@@ -20,18 +20,14 @@ import {
 } from '@/components/ui/select'
 import { useCreateEmployee } from '@/hooks/use-create-employee'
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  type CreateEmployeeInput,
-  EMPLOYEE_NETWORKS,
-  createEmployeeSchema,
-  parseGhs,
-} from '@wagr/types'
+import { EMPLOYEE_NETWORKS, createEmployeeSchema, parseGhs } from '@wagr/types'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { type DefaultValues, useForm } from 'react-hook-form'
 import { toast } from 'sonner'
+import type { z } from 'zod'
 
 const NETWORK_LABELS: Record<(typeof EMPLOYEE_NETWORKS)[number], string> = {
   mtn: 'MTN',
@@ -39,26 +35,30 @@ const NETWORK_LABELS: Record<(typeof EMPLOYEE_NETWORKS)[number], string> = {
   at: 'AirtelTigo',
 }
 
+// Salary is captured outside the form (its own input with cedis-to-pesewas
+// parsing) and validated manually below, so the form-side schema omits it.
+// Keeping the full createEmployeeSchema as the form resolver was silently
+// blocking submission because monthly_salary_pesewas was never registered.
+const createEmployeeFormSchema = createEmployeeSchema.omit({ monthly_salary_pesewas: true })
+type CreateEmployeeFormInput = z.infer<typeof createEmployeeFormSchema>
+
 export default function NewEmployeePage() {
   const router = useRouter()
   const createEmployee = useCreateEmployee()
-  // Salary is typed as cedis ("3000" or "3,000.50") and parsed to pesewas at
-  // submit. We keep the raw string in component state so the user sees what
-  // they typed; the form's actual value is the parsed integer.
   const [salaryInput, setSalaryInput] = useState('')
   const [salaryError, setSalaryError] = useState<string | null>(null)
 
-  const form = useForm<CreateEmployeeInput>({
-    resolver: zodResolver(createEmployeeSchema),
+  const form = useForm<CreateEmployeeFormInput>({
+    resolver: zodResolver(createEmployeeFormSchema),
     defaultValues: {
       full_name: '',
       momo_number: '',
       start_date: '',
-    } satisfies DefaultValues<CreateEmployeeInput>,
+    } satisfies DefaultValues<CreateEmployeeFormInput>,
     mode: 'onBlur',
   })
 
-  function onSubmit(values: CreateEmployeeInput) {
+  function onSubmit(values: CreateEmployeeFormInput) {
     const pesewas = parseGhs(salaryInput)
     if (pesewas === null || pesewas <= 0) {
       setSalaryError('Enter a valid salary (e.g. 1500.00)')
@@ -71,6 +71,9 @@ export default function NewEmployeePage() {
         onSuccess: (employee) => {
           toast.success(`${employee.full_name} added`)
           router.push('/dashboard/employees')
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : 'Could not add worker')
         },
       },
     )
