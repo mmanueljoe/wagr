@@ -3,20 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { ussdErrorHandler } from './ussd-error-handler'
 
 function fakeRes() {
-  const res = {
-    status: vi.fn(),
-    json: vi.fn(),
-  }
-  res.status.mockReturnValue(res)
-  return res as unknown as Response & {
-    status: ReturnType<typeof vi.fn>
-    json: ReturnType<typeof vi.fn>
-  }
+  const status = vi.fn()
+  const json = vi.fn()
+  const res: Partial<Response> = { status, json }
+  status.mockReturnValue(res)
+  return { res: res as Response, status, json }
 }
 
 describe('ussdErrorHandler', () => {
   it('returns 200 with an END response so the worker never sees a hung screen', () => {
-    const res = fakeRes()
+    const { res, status, json } = fakeRes()
     ussdErrorHandler(
       new Error('redis exploded'),
       { url: '/ussd' } as Request,
@@ -24,8 +20,8 @@ describe('ussdErrorHandler', () => {
       vi.fn() as NextFunction,
     )
 
-    expect(res.status).toHaveBeenCalledWith(200)
-    expect(res.json).toHaveBeenCalledWith({
+    expect(status).toHaveBeenCalledWith(200)
+    expect(json).toHaveBeenCalledWith({
       message: 'Session error. Please dial again.',
       reply: false,
     })

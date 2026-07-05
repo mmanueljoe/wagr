@@ -24,6 +24,15 @@
 //   SMOKE_EMPLOYER_MOMO     default 0244000001 — the wallet float is pulled from
 //   SMOKE_EMPLOYER_NETWORK  default mtn
 import { createInterface } from 'node:readline/promises'
+import type {
+  AdvanceListResponse,
+  AuthUser,
+  DashboardSummary,
+  Employee,
+  FloatStatusResponse,
+  PeriodClosePreview,
+  PeriodCloseStatus,
+} from '@wagr/types'
 
 const API = process.env.SMOKE_API_URL ?? 'http://localhost:3001'
 const WORKER_MOMO = process.env.SMOKE_WORKER_MOMO ?? '0244123456'
@@ -42,6 +51,7 @@ const ADVANCE_CEDIS = '50'
 const PIN = process.env.SMOKE_WORKER_PIN ?? '4321'
 const POLL_TIMEOUT_MS = 120_000
 const POLL_EVERY_MS = 3_000
+const HTTP_TIMEOUT_MS = 10_000
 
 let cookie = ''
 let passed = 0
@@ -51,7 +61,7 @@ async function main(): Promise<void> {
   banner()
 
   await step('api is up (/health)', async () => {
-    const res = await fetch(`${API}/health`)
+    const res = await fetch(`${API}/health`, { signal: AbortSignal.timeout(HTTP_TIMEOUT_MS) })
     if (!res.ok) throw new Error(`GET /health returned ${res.status}`)
   })
 
@@ -75,7 +85,7 @@ async function main(): Promise<void> {
     await step('employer logs in', async () => {
       const res = await post('/auth/login', { email, password })
       captureCookie(res)
-      const me = await getJson('/auth/me')
+      const me = await getJson<AuthUser>('/auth/me')
       if (!me.employer_id) throw new Error('/auth/me missing employer_id')
     })
 
@@ -92,7 +102,7 @@ async function main(): Promise<void> {
           start_date: '2026-01-05',
         })
       }
-      const list = await getJson('/employees')
+      const list = await getJson<{ employees: Employee[] }>('/employees')
       if (list.employees.length !== 3) {
         throw new Error(`expected 3 employees, got ${list.employees.length}`)
       }
@@ -145,7 +155,7 @@ async function main(): Promise<void> {
 
   await step('advance reaches disbursed (transfer polling)', async () => {
     await pollUntil('GET /advances shows a terminal advance', async () => {
-      const { advances } = await getJson('/advances')
+      const { advances } = await getJson<AdvanceListResponse>('/advances')
       const adv = advances[0]
       if (!adv) return false
       if (adv.status === 'failed') {
@@ -156,7 +166,7 @@ async function main(): Promise<void> {
   })
 
   await step('dashboard reflects the advance', async () => {
-    const summary = await getJson('/dashboard/summary')
+    const summary = await getJson<DashboardSummary>('/dashboard/summary')
     if (summary.advances_this_period_count < 1) {
       throw new Error('dashboard advances_this_period_count still 0')
     }
@@ -182,7 +192,7 @@ async function fundFloat(): Promise<void> {
     externalRef = body.external_ref
 
     if (body.state === 'otp_required') {
-      const otp = await promptLine(`  Moolre SMS'd an OTP to ${EMPLOYER_MOMO}. Enter it: `)
+      const otp = await promptLine(`  Moolre SMS'd an OTP to ${mask(EMPLOYER_MOMO)}. Enter it: `)
       await post('/float/fund/otp', { top_up_id: body.top_up_id, otpcode: otp })
     }
   })
@@ -194,7 +204,7 @@ async function fundFloat(): Promise<void> {
       log('  approve the MoMo prompt on the employer phone; waiting for the webhook (needs ngrok)')
     }
     await pollUntil('GET /float shows the credited balance', async () => {
-      const status = await getJson('/float')
+      const status = await getJson<FloatStatusResponse>('/float')
       return status.balance_pesewas >= FLOAT_TOPUP_PESEWAS && !status.has_pending_top_up
     })
   })
@@ -203,7 +213,7 @@ async function fundFloat(): Promise<void> {
 async function periodClose(): Promise<void> {
   let repaymentId = ''
   await step('period close preview includes the advance', async () => {
-    const preview = await getJson('/period-close/preview')
+    const preview = await getJson<PeriodClosePreview>('/period-close/preview')
     if (preview.total_to_recover_pesewas <= 0) {
       throw new Error('preview shows nothing to recover')
     }
@@ -222,7 +232,7 @@ async function periodClose(): Promise<void> {
       log('  approve the repayment MoMo prompt; waiting for the webhook (needs ngrok)')
     }
     await pollUntil('GET /period-close/status shows collected', async () => {
-      const status = await getJson(`/period-close/status/${repaymentId}`)
+      const status = await getJson<PeriodCloseStatus>(`/period-close/status/${repaymentId}`)
       if (status.status === 'failed') {
         throw new Error(`repayment failed: ${status.failure_reason ?? 'no reason recorded'}`)
       }
@@ -242,7 +252,10 @@ async function repaymentExternalRef(repaymentId: string): Promise<string> {
   }
   const res = await fetch(
     `${base}/rest/v1/repayments?id=eq.${repaymentId}&select=moolre_external_ref`,
-    { headers: { apikey: key, authorization: `Bearer ${key}` } },
+    {
+      headers: { apikey: key, authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    },
   )
   const rows = (await res.json()) as Array<{ moolre_external_ref: string }>
   const ref = rows[0]?.moolre_external_ref
@@ -259,6 +272,7 @@ async function simulateWebhook(externalref: string): Promise<void> {
     body: JSON.stringify({
       data: { secret, externalref, txstatus: 1, transactionid: `smoke-sim-${Date.now()}` },
     }),
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`simulated webhook rejected: ${res.status}`)
 }
@@ -270,19 +284,31 @@ async function post(path: string, body: unknown): Promise<Response> {
     method: 'POST',
     headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   })
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`POST ${path} → ${res.status}: ${text.slice(0, 300)}`)
+    throw new Error(`POST ${path} → ${res.status}: ${await errorSummary(res)}`)
   }
   return res
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: test harness reads loosely-shaped JSON
-async function getJson(path: string): Promise<any> {
-  const res = await fetch(`${API}${path}`, { headers: { cookie } })
+// Surface the api's { error: { code, message } } shape instead of the raw
+// body — a validation error could echo a momo number or name back at us,
+// and step() prints this string to the terminal.
+async function errorSummary(res: Response): Promise<string> {
+  const body = (await res.json().catch(() => null)) as {
+    error?: { code?: string; message?: string }
+  } | null
+  return body?.error ? `${body.error.code}: ${body.error.message}` : 'no parseable error body'
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    headers: { cookie },
+    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+  })
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
-  return res.json()
+  return (await res.json()) as T
 }
 
 async function ussd(
@@ -355,10 +381,14 @@ function payDateRoughlyTwoWeeksAgo(): number {
   return Math.min(d, 28)
 }
 
+function mask(momo: string): string {
+  return `${momo.slice(0, 3)}***${momo.slice(-2)}`
+}
+
 function banner(): void {
   log(`Wagr smoke test → ${API}`)
   log(`  webhooks: ${SIMULATE_WEBHOOKS ? 'SIMULATED (self-POST)' : 'real (Moolre → ngrok)'}`)
-  log(`  worker: ${WORKER_NETWORK} ${WORKER_MOMO.slice(0, 3)}***${WORKER_MOMO.slice(-2)}\n`)
+  log(`  worker: ${WORKER_NETWORK} ${mask(WORKER_MOMO)}\n`)
 }
 
 function summary(): void {
