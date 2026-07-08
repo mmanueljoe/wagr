@@ -49,9 +49,19 @@ export type TransferStatusCode = 0 | 1 | 2 | 3
 
 // ── Initiate Transfer ────────────────────────────────────────────────────
 
+// Moolre codes we've confirmed on live to mean "terminal, transfer completed
+// successfully" even when the envelope's top-level `status` field is 0 and
+// `data.txstatus` isn't set. Their gateway sometimes returns these on the
+// initial /transact/transfer call for transfers that settled synchronously.
+// Observed on GHS 5 test on 2026-07-08: code `OBGH01`, message "Pay out
+// Successful". Worker received the money, status endpoint kept returning
+// non-terminal, would have force-failed on the reconciler without this.
+const KNOWN_TERMINAL_SUCCESS_CODES = new Set(['OBGH01'])
+
 // POST /open/transact/transfer with X-API-KEY.
-// Returns Moolre's initial acknowledgement — usually pending (0) at this
-// stage. Poll Transfer Status for the terminal state.
+// Returns Moolre's initial acknowledgement. Usually pending (0), but Moolre
+// occasionally returns terminal success synchronously — caller MUST check
+// txStatus and short-circuit rather than always polling.
 //
 // We pass `accountnumber` = MOOLRE_ACCOUNT_NUMBER (Wagr's wallet, debited).
 export async function initiateTransfer(
@@ -71,14 +81,28 @@ export async function initiateTransfer(
     'X-API-KEY': env.MOOLRE_API_KEY,
   })
 
-  // Moolre's standard envelope: { status, code, message, data, go }.
-  // We rely on `data.txstatus` for the workflow; `code` is just for logs.
-  const txStatus = parseTxStatus(response.data?.txstatus)
+  const rawCode = typeof response.code === 'string' ? response.code : 'UNKNOWN'
+  // Prefer data.txstatus (documented shape). If it's non-terminal but the
+  // response code is a known-terminal-success signal we've seen live, trust
+  // the code — otherwise we'd waste 2 min polling a completed transfer.
+  let txStatus = parseTxStatus(response.data?.txstatus)
+  if (txStatus !== 1 && txStatus !== 2 && KNOWN_TERMINAL_SUCCESS_CODES.has(rawCode)) {
+    txStatus = 1
+  }
+  // Watchtower: any non-terminal transfer response with envelope status=0
+  // is a candidate for the KNOWN_TERMINAL_SUCCESS_CODES set. Log distinctly
+  // so ops can grep for new codes during testing and add them.
+  if (txStatus !== 1 && txStatus !== 2 && response.status !== 1) {
+    logger.warn(
+      { rawCode, moolreMessage: response.message, externalRef: input.externalRef },
+      'moolre transfer: undocumented non-terminal code — investigate whether this is actually terminal',
+    )
+  }
   return {
     txStatus,
     transactionId: parseTransactionId(response.data?.transactionid),
     externalRef: input.externalRef,
-    rawCode: typeof response.code === 'string' ? response.code : 'UNKNOWN',
+    rawCode,
   }
 }
 
@@ -91,7 +115,14 @@ export async function initiateTransfer(
 // loop must never coerce it to failed.
 export async function getTransferStatus(externalRef: string): Promise<TransferStatusResult> {
   const body = {
+    // Moolre's status endpoint needs BOTH fields, learned the hard way:
+    //   type:   the transaction kind we're looking up. 1 = transfer.
+    //   idtype: how to look it up. 1 = by transactionid, 2 = by externalref.
+    // We set externalref on every /transact/transfer call, so we look up by 2.
+    // Sending only `type` → SS06 "idtype invalid". Sending only `idtype` → SS04
+    // "Request type invalid".
     type: 1,
+    idtype: 2,
     externalref: externalRef,
     accountnumber: env.MOOLRE_ACCOUNT_NUMBER,
   }
@@ -197,6 +228,65 @@ function derivePaymentState(httpOk: boolean, code: string): PaymentState {
   return 'rejected'
 }
 
+// ── Payment Link (hosted Moolre checkout page) ───────────────────────────
+
+export interface GeneratePaymentLinkInput {
+  amountCedis: number
+  email: string
+  externalRef: string
+  // Where Moolre bounces the payer back to once the hosted checkout finishes.
+  // Recommend a Wagr URL that can look up the top-up by externalRef and show
+  // a "waiting for confirmation" or "funded" state.
+  redirectUrl: string
+  // Minutes the generated link stays valid. Moolre's minimum is 1.
+  expirationMinutes: number
+  // Free-form key/value bag Moolre echoes back on the completion webhook.
+  // Put the internal top-up id here so the webhook handler can map back
+  // without another DB lookup.
+  metadata?: Record<string, string>
+}
+
+export interface GeneratedPaymentLink {
+  authorizationUrl: string
+  reference: string
+}
+
+// POST /embed/link with X-API-USER + X-API-PUBKEY. Returns a Moolre-hosted
+// checkout URL. Employer opens the URL, Moolre handles OTP/PIN/MoMo prompt,
+// Moolre POSTs our account-level webhook on completion. See
+// docs/architecture/moolre-api-reference.md (Payments API → Payment Link).
+export async function generatePaymentLink(
+  input: GeneratePaymentLinkInput,
+): Promise<GeneratedPaymentLink> {
+  const body = {
+    type: 1,
+    amount: input.amountCedis.toFixed(2),
+    email: input.email,
+    externalref: input.externalRef,
+    redirect: input.redirectUrl,
+    reusable: '0',
+    expiration_time: input.expirationMinutes,
+    currency: 'GHS',
+    accountnumber: env.MOOLRE_ACCOUNT_NUMBER,
+    ...(input.metadata ? { metadata: input.metadata } : {}),
+  }
+
+  const response = await postJson('/embed/link', body, {
+    'X-API-PUBKEY': env.MOOLRE_API_PUBKEY,
+  })
+
+  const authorizationUrl = response.data?.authorization_url
+  const reference = response.data?.reference
+  if (typeof authorizationUrl !== 'string' || typeof reference !== 'string') {
+    throw new AppError(
+      'MOOLRE_HTTP_FAILED',
+      502,
+      'Payment provider returned an unexpected payment-link response',
+    )
+  }
+  return { authorizationUrl, reference }
+}
+
 // ── SMS ──────────────────────────────────────────────────────────────────
 
 export interface SendSmsInput {
@@ -205,18 +295,13 @@ export interface SendSmsInput {
   ref?: string // Optional caller-side reference for delivery tracking.
 }
 
-// Approved sender ID, max 11 chars. The sandbox substitutes Moolre's own
-// sender ID until ours is approved — see
-// docs/architecture/moolre-api-reference.md (SMS API → Sandbox behaviour).
-const SMS_SENDER_ID = 'Wagr'
-
 // POST /open/sms/send with X-API-VASKEY (the SMS service's per-instance key).
 // Throws AppError on transport/HTTP failures so callers can decide whether
 // to swallow (notification flows) or surface (admin tooling).
 export async function sendSms(input: SendSmsInput): Promise<void> {
   const body = {
     type: 1,
-    senderid: SMS_SENDER_ID,
+    senderid: env.MOOLRE_SMS_SENDER_ID,
     messages: [
       {
         recipient: input.to,
@@ -307,7 +392,19 @@ async function postJson(
     }
 
     if (json.status !== 1) {
-      logger.warn({ path, moolreCode: json.code }, 'moolre call returned non-success status')
+      // Moolre's envelope-level `status` field is unreliable: it's 0 (their
+      // standard "not success" flag) for some responses that are actually
+      // terminal successes (see KNOWN_TERMINAL_SUCCESS_CODES). Log those at
+      // INFO so ops isn't chasing spurious WARNs; everything else at WARN.
+      const isKnownTerminalSuccess =
+        typeof json.code === 'string' && KNOWN_TERMINAL_SUCCESS_CODES.has(json.code)
+      const logFn = isKnownTerminalSuccess ? logger.info.bind(logger) : logger.warn.bind(logger)
+      logFn(
+        { path, moolreCode: json.code, moolreMessage: json.message },
+        isKnownTerminalSuccess
+          ? 'moolre call succeeded (envelope status=0 but terminal code)'
+          : 'moolre call returned non-success status',
+      )
       // Bubble the envelope so callers can inspect txstatus / code — Moolre
       // sometimes returns status=0 with a 200 OK, particularly for async
       // workflows where the result will arrive later via polling.

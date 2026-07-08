@@ -7,6 +7,7 @@ import {
   parseGhs,
 } from '@wagr/types'
 import type { EmployeeForUssd } from '../services/employee-service'
+import { env } from './env'
 import { calculateFee } from './wage-engine/fee'
 
 // Pure step handler. The controller does the I/O — Redis read/write,
@@ -55,10 +56,12 @@ export interface FlowResult {
 
 const PIN_REGEX = /^\d{4}$/
 
-// GHS 50 floor — keeps the worker's experience clean (no GHS 5 advances)
-// and means our 3% fee always leaves something after Moolre's per-transaction
-// minimum (GHS 0.50). See fee.ts.
-const MIN_ADVANCE_PESEWAS: MoneyPesewas = 5_000
+// GHS 50 floor by default — keeps the worker's experience clean (no GHS 5
+// advances) and means our 3% fee always leaves something after Moolre's
+// per-transaction minimum (GHS 0.50). See fee.ts. Configurable via env
+// (MIN_ADVANCE_PESEWAS) so dev can lower it for small-real-money tests
+// without touching code.
+const MIN_ADVANCE_PESEWAS = env.MIN_ADVANCE_PESEWAS as MoneyPesewas
 
 // Three strikes per session. After the third wrong PIN we END and the
 // worker has to dial again. Longer-term lockouts (e.g. 30 minutes after
@@ -66,21 +69,21 @@ const MIN_ADVANCE_PESEWAS: MoneyPesewas = 5_000
 // here. See CLAUDE.md "Worker PINs".
 const MAX_PIN_ATTEMPTS = 3
 
-const NOT_REGISTERED = 'Number not registered on Wagr. Contact your employer.'
-const DEACTIVATED = 'Your access has been deactivated. Contact your employer.'
-const PIN_SETUP_PROMPT = 'Welcome to Wagr.\nPlease set a 4-digit PIN:'
+const NOT_REGISTERED = 'Number not registered on Wagr.\nContact your employer.'
+const DEACTIVATED = 'Your access has been deactivated.\nContact your employer.'
+const PIN_SETUP_PROMPT = 'Welcome to Wagr.\n\nSet a 4-digit PIN:'
 const PIN_CONFIRM_PROMPT = 'Re-enter your PIN to confirm:'
-const PIN_INVALID = 'PIN must be 4 digits. Try again:'
-const PIN_MISMATCH = `PINs did not match.\n${PIN_SETUP_PROMPT}`
+const PIN_INVALID = 'PIN must be 4 digits.\nTry again:'
+const PIN_MISMATCH = `PINs did not match.\n\n${PIN_SETUP_PROMPT}`
 const PIN_ENTRY_PROMPT = 'Enter your 4-digit PIN:'
-const TOO_MANY_ATTEMPTS = 'Too many wrong PIN attempts. Try again later.'
-const NO_BALANCE_AVAILABLE = 'You have no advance available right now. Come back after payday.'
+const TOO_MANY_ATTEMPTS = 'Too many wrong PIN attempts.\nTry again later.'
+const NO_BALANCE_AVAILABLE = 'No advance available right now.\nCome back after payday.'
 const EMPLOYER_FLOAT_EMPTY =
-  "Your employer's Wagr float is empty. Please ask them to top up, then try again."
-const AMOUNT_INVALID = 'Enter a whole cedi amount, e.g. 100.'
+  "Your employer's Wagr float is empty.\nAsk them to top up, then try again."
+const AMOUNT_INVALID = 'Enter a whole cedi amount.\nExample: 100'
 const AMOUNT_TOO_LOW = `Minimum advance is ${formatGhs(MIN_ADVANCE_PESEWAS)}.`
-const CANCELLED = 'Cancelled. No advance created.'
-const SESSION_ERROR = 'Session error. Please dial again.'
+const CANCELLED = 'Cancelled.\nNo advance created.'
+const SESSION_ERROR = 'Session error.\nPlease dial again.'
 
 export function handleCallback(
   callback: UssdCallback,
@@ -253,7 +256,7 @@ function handlePinEntry(
   const remaining = MAX_PIN_ATTEMPTS - attempts
   const noun = remaining === 1 ? 'attempt' : 'attempts'
   return {
-    response: reply(`Wrong PIN. ${remaining} ${noun} remaining.\n${PIN_ENTRY_PROMPT}`),
+    response: reply(`Wrong PIN. ${remaining} ${noun} remaining.\n\n${PIN_ENTRY_PROMPT}`),
     nextSession: { ...session, pin_attempts: attempts },
   }
 }
@@ -275,7 +278,7 @@ function disburseSideEffect(session: UssdSession): SideEffect {
 
 function advanceSubmittedMessage(session: UssdSession): string {
   const net = session.net_disbursement_pesewas ?? 0
-  return `Request submitted. ${formatGhs(net)} will arrive on ${session.momo_number} shortly.`
+  return `Request submitted.\n\n${formatGhs(net)} will arrive on ${session.momo_number} shortly.`
 }
 
 // Entry into the balance step — handles the "no cap available" END case
@@ -309,20 +312,23 @@ function enterBalance(session: UssdSession): FlowResult {
 }
 
 function balanceScreen(session: UssdSession): string {
+  const firstName = session.full_name.split(' ')[0] ?? session.full_name
   return [
-    `Hi ${session.full_name}.`,
-    `Earned: ${formatGhs(session.earned_wage_pesewas)}.`,
-    `Max advance: ${formatGhs(session.max_advance_pesewas)}.`,
-    'Press 1 to continue.',
+    `Hi ${firstName}.`,
+    '',
+    `Earned: ${formatGhs(session.earned_wage_pesewas)}`,
+    `Max advance: ${formatGhs(session.max_advance_pesewas)}`,
+    '',
+    '1. Request advance',
   ].join('\n')
 }
 
 function amountPrompt(maxAdvancePesewas: MoneyPesewas): string {
-  return `Enter amount (max ${formatGhs(maxAdvancePesewas)}):`
+  return `Enter advance amount.\nMax: ${formatGhs(maxAdvancePesewas)}`
 }
 
 function amountError(reason: string, session: UssdSession): string {
-  return `${reason}\n${amountPrompt(session.max_advance_pesewas)}`
+  return `${reason}\n\n${amountPrompt(session.max_advance_pesewas)}`
 }
 
 function confirmScreen(session: UssdSession): string {
@@ -333,10 +339,13 @@ function confirmScreen(session: UssdSession): string {
   const fee = session.fee_pesewas ?? 0
   const net = session.net_disbursement_pesewas ?? 0
   return [
-    `Confirm: ${formatGhs(requested)}`,
+    `Advance: ${formatGhs(requested)}`,
     `Fee: ${formatGhs(fee)}`,
-    `You receive: ${formatGhs(net)} to ${session.momo_number}`,
-    '1=Confirm 2=Cancel',
+    `You receive: ${formatGhs(net)}`,
+    `To: ${session.momo_number}`,
+    '',
+    '1. Confirm',
+    '2. Cancel',
   ].join('\n')
 }
 
