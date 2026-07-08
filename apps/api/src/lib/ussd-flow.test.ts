@@ -118,7 +118,7 @@ describe('handleCallback — session init', () => {
       NOW,
     )
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('set a 4-digit PIN')
+    expect(result.response.message).toContain('Set a 4-digit PIN')
     expect(result.nextSession).toMatchObject({
       step: 'pin_setup_new',
       employee_id: EMPLOYEE_ID,
@@ -133,10 +133,10 @@ describe('handleCallback — session init', () => {
   it('shows the balance screen when the employee already has a PIN', () => {
     const result = handleCallback(callback({ new: true }), null, context(), null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Hi Ama Boateng.')
+    expect(result.response.message).toContain('Hi Ama.')
     expect(result.response.message).toContain('Earned: GHS 1,500.00')
     expect(result.response.message).toContain('Max advance: GHS 750.00')
-    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.response.message).toContain('1. Request advance')
     expect(result.nextSession).toMatchObject({
       step: 'balance',
       is_first_use: false,
@@ -153,7 +153,7 @@ describe('handleCallback — session init', () => {
       NOW,
     )
     expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('no advance available')
+    expect(result.response.message).toContain('No advance available')
     expect(result.nextSession).toBeNull()
   })
 
@@ -182,7 +182,7 @@ describe('handleCallback — session init', () => {
       NOW,
     )
     expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('no advance available')
+    expect(result.response.message).toContain('No advance available')
   })
 
   it('clamps max_advance to the smaller of personal cap and float available', () => {
@@ -210,7 +210,7 @@ describe('handleCallback — balance step', () => {
   it('transitions to the amount step on 1', () => {
     const result = handleCallback(callback({ message: '1' }), BALANCE_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Enter amount')
+    expect(result.response.message).toContain('Enter advance amount')
     expect(result.response.message).toContain('GHS 750.00')
     expect(result.nextSession?.step).toBe('amount')
   })
@@ -218,7 +218,7 @@ describe('handleCallback — balance step', () => {
   it('re-prompts on any other input and keeps the session', () => {
     const result = handleCallback(callback({ message: '9' }), BALANCE_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.response.message).toContain('1. Request advance')
     expect(result.nextSession).toEqual(BALANCE_SESSION)
   })
 })
@@ -228,7 +228,7 @@ describe('handleCallback — amount step', () => {
     const result = handleCallback(callback({ message: '40' }), AMOUNT_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
     expect(result.response.message).toContain('Minimum advance is GHS 50.00')
-    expect(result.response.message).toContain('Enter amount')
+    expect(result.response.message).toContain('Enter advance amount')
     expect(result.nextSession).toEqual(AMOUNT_SESSION)
   })
 
@@ -255,7 +255,7 @@ describe('handleCallback — amount step', () => {
   it('accepts the GHS 50 floor exactly and transitions to confirm', () => {
     const result = handleCallback(callback({ message: '50' }), AMOUNT_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Confirm: GHS 50.00')
+    expect(result.response.message).toContain('Advance: GHS 50.00')
     expect(result.nextSession).toMatchObject({
       step: 'confirm',
       requested_amount_pesewas: 5_000,
@@ -274,10 +274,12 @@ describe('handleCallback — amount step', () => {
   it('shows the full breakdown on a valid mid-range amount', () => {
     const result = handleCallback(callback({ message: '200' }), AMOUNT_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Confirm: GHS 200.00')
+    expect(result.response.message).toContain('Advance: GHS 200.00')
     expect(result.response.message).toContain('Fee: GHS 6.00')
-    expect(result.response.message).toContain('You receive: GHS 194.00 to 0241235993')
-    expect(result.response.message).toContain('1=Confirm 2=Cancel')
+    expect(result.response.message).toContain('You receive: GHS 194.00')
+    expect(result.response.message).toContain('To: 0241235993')
+    expect(result.response.message).toContain('1. Confirm')
+    expect(result.response.message).toContain('2. Cancel')
     expect(result.nextSession).toMatchObject({
       step: 'confirm',
       requested_amount_pesewas: 20_000,
@@ -323,8 +325,8 @@ describe('handleCallback — confirm step', () => {
   it('re-shows the confirm screen on any other input', () => {
     const result = handleCallback(callback({ message: '7' }), CONFIRM_SESSION, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Confirm: GHS 200.00')
-    expect(result.response.message).toContain('1=Confirm 2=Cancel')
+    expect(result.response.message).toContain('Advance: GHS 200.00')
+    expect(result.response.message).toContain('1. Confirm')
     expect(result.nextSession).toEqual(CONFIRM_SESSION)
   })
 })
@@ -426,8 +428,8 @@ describe('handleCallback — pin setup', () => {
     }
     const result = handleCallback(callback({ message: '1234' }), confirmSession, null, null, NOW)
     expect(result.response.reply).toBe(true)
-    expect(result.response.message).toContain('Hi Ama Boateng.')
-    expect(result.response.message).toContain('Press 1 to continue.')
+    expect(result.response.message).toContain('Hi Ama.')
+    expect(result.response.message).toContain('1. Request advance')
     expect(result.nextSession?.step).toBe('balance')
     expect(result.nextSession?.new_pin).toBeUndefined()
     expect(result.sideEffect).toEqual({
@@ -446,7 +448,7 @@ describe('handleCallback — pin setup', () => {
     }
     const result = handleCallback(callback({ message: '1234' }), confirmSession, null, null, NOW)
     expect(result.response.reply).toBe(false)
-    expect(result.response.message).toContain('no advance available')
+    expect(result.response.message).toContain('No advance available')
     expect(result.nextSession).toBeNull()
     expect(result.sideEffect).toEqual({
       type: 'save_pin',

@@ -194,6 +194,45 @@ When a worker authorises a Wagr advance via USSD, **pass the Moolre
 their PIN in the USSD flow; they shouldn't see a second prompt. This is the
 mechanism that makes the "PIN once, advance arrives" experience possible.
 
+### Payment Link (Web POS) — hosted checkout
+
+Moolre offers a hosted checkout page for web-initiated collections. Better fit
+than Initiate Payment for the employer float top-up (no USSD session, no OTP
+handling on our side). Employer clicks "Top Up" in the dashboard → we call
+`/embed/link` → we redirect them to the returned URL → they authorise on
+Moolre's page → Moolre POSTs our webhook + redirects them back.
+
+```
+POST https://sandbox.moolre.com/embed/link
+Headers: X-API-USER, X-API-PUBKEY (public key)
+```
+
+| Body field | Required | Notes |
+|---|---|---|
+| `type` | yes | Always `1` |
+| `amount` | yes | Cedis as a string, e.g. `"180.00"` |
+| `email` | yes | Business email — Moolre uses it for receipts |
+| `externalref` | yes | Must be unique per attempt (UUID) |
+| `redirect` | optional | Where to bounce the payer back after the hosted page finishes |
+| `callback` | optional | Per-link webhook URL. Omit to use the account-level callback set via `/open/account/update`. |
+| `reusable` | yes | `"0"` for one-shot payments (float top-up), `"1"` for reusable links |
+| `expiration_time` | optional | Minutes; minimum 1. Recommend 15 for top-ups. |
+| `currency` | yes | `"GHS"` |
+| `accountnumber` | yes | Your Moolre account number |
+| `metadata` | optional | Free-form object; echoed back verbatim on the completion webhook — put the internal top-up id here |
+
+Success response — `code: "POS09"`, `data: { authorization_url, reference }`.
+Failure — `code: "INP02"` when `externalref` is a duplicate.
+
+### Critical insight for Wagr — two Payment methods, two use cases
+
+- **Employer float top-up** (initiated from the web dashboard): use Payment Link.
+  There's no USSD session, so Initiate Payment with sessionid isn't available and
+  the OTP-verify step (`TP17` errors) is unreliable. Wagr's `lib/moolre.ts`
+  exposes this as `generatePaymentLink`.
+- **Worker advance** (initiated from the USSD flow): use Initiate Payment with
+  the Moolre `sessionid` from the USSD callback — this skips OTP.
+
 ---
 
 ## Transfers API
@@ -241,6 +280,48 @@ mark the advance `failed` on any error short of `txstatus=2`. Instead, it
 queues a status check that polls every N seconds until terminal. The Express
 spec currently in [feature-disbursements.md](../specs/feature-disbursements.md)
 should be updated to reflect this.
+
+### Synchronous-success responses on Initiate Transfer
+
+Moolre sometimes reports the terminal state on the initial `/transact/transfer`
+call — the transfer settles inside the HTTP round-trip. In that case the
+response envelope's top-level `status` field is `0` (their standard "not
+success" flag) but the `code` and `message` fields say otherwise. Confirmed
+on live 2026-07-08:
+
+```json
+{
+  "status": 0,
+  "code": "OBGH01",
+  "message": ["Pay out Successful", "Click close to view transactions."],
+  "data": { ... }
+}
+```
+
+Worker's MoMo received the money at the same moment. `OBGH01` is a
+terminal-success signal — treat as `txstatus=1`. If we only look at envelope
+`status` we'd log this as failure; if we only rely on the Status endpoint
+to confirm we'd never see terminal (their status endpoint kept reporting
+non-terminal for this transfer's externalref for the full 2-minute poll
+window).
+
+Our `initiateTransfer` in [lib/moolre.ts](../../apps/api/src/lib/moolre.ts)
+maintains a `KNOWN_TERMINAL_SUCCESS_CODES` set and promotes them to
+`txStatus=1`. Add new codes there when we observe them.
+
+### Transfer Status — POST /open/transact/status
+
+Same `X-API-USER` + `X-API-KEY` as Initiate Transfer.
+
+| Body field | Required | Notes |
+|---|---|---|
+| `type` | yes | Transaction kind. `1` = transfer, `2` = payment. |
+| `idtype` | yes | Lookup method. `1` = by `transactionid`, `2` = by `externalref`. |
+| `externalref` | yes when `idtype=2` | The ref you set on the original transfer |
+| `transactionid` | yes when `idtype=1` | Moolre's internal id from the initiate response |
+| `accountnumber` | yes | Your Moolre account number |
+
+**Both `type` and `idtype` are required.** Sending only `type` → `SS06 / "idtype invalid, options are [1,2]"`. Sending only `idtype` → `SS04 / "Request type invalid"`. Moolre validates these before looking up the transaction at all.
 
 ### Validate before transfer
 
@@ -453,16 +534,15 @@ the call and trusts the wallet ledger.
 
 These need confirmation before [moolre-disbursement] can ship its accounting layer.
 
-1. **How does Moolre collect their Transfers fee?**
-   - **Assumption (Option A):** Moolre debits Wagr's wallet for the transfer
-     amount AND their fee separately. Worker receives exactly what we promised
-     on the USSD confirm screen. This is the industry standard.
-   - Alternative (Option B): Moolre skims their cut from inside the transfer.
-     Worker would receive less than promised. Would force a gross-up of the
-     transfer amount or a smaller "you receive" number on the confirm screen.
-   - **How to resolve:** trigger one real disbursement in the Moolre sandbox
-     and compare the worker's wallet balance to what was promised on screen.
-     Pending USSD code purchase.
+1. ~~**How does Moolre collect their Transfers fee?**~~ **RESOLVED 2026-07-08 — Option A.**
+   Confirmed on live with a real GHS 5 disbursement:
+   - Moolre wallet before: GHS 100.00
+   - Moolre wallet after: GHS 94.65 (debited by 5.35)
+   - Worker's MoMo received: GHS 4.85 (exactly what our USSD confirm screen promised)
+   - Breakdown: GHS 4.85 to worker + GHS 0.50 Moolre fee (their per-txn minimum) = GHS 5.35
+   
+   Moolre debits Wagr's wallet for `amount + their fee` separately. Worker
+   always receives what we promised. Our disbursement math is correct as-designed.
 
 2. **Settlement fees from Moolre wallet to a Ghanaian bank account.**
    - The pricing page is silent. Could be free, flat, or a percentage.
