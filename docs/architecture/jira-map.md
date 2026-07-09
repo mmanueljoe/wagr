@@ -95,6 +95,7 @@ When Jira renumbers a story (delete + recreate, project reset, etc.), only the *
 | Slug | Title | Jira ID |
 |---|---|---|
 | demo-data-setup | Demo employer + pre-loaded realistic data | |
+| demo-smoke-test | Scripted full-loop smoke test run before every pitch, video recording, and deploy | |
 | explainer-video | 60-second explainer video | |
 | submission | Competition submission on startup.moolre.com | |
 
