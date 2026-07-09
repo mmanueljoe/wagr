@@ -31,15 +31,25 @@ interface RequestOptions {
   signal?: AbortSignal
 }
 
+// When the api is served through ngrok's free tier, browser requests hit
+// their interstitial warning page unless we opt out with this header. The
+// header is harmless outside ngrok — regular hosts ignore unknown headers.
+// Removes an entire class of "TypeError: Failed to fetch" in dev.
+const NGROK_SKIP_HEADER: HeadersInit = { 'ngrok-skip-browser-warning': 'true' }
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   options?: RequestOptions,
 ): Promise<T> {
-  const init: RequestInit = { method, credentials: 'include' }
+  const init: RequestInit = {
+    method,
+    credentials: 'include',
+    headers: { ...NGROK_SKIP_HEADER },
+  }
   if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' }
+    init.headers = { ...init.headers, 'Content-Type': 'application/json' }
     init.body = JSON.stringify(body)
   }
   if (options?.signal) {
