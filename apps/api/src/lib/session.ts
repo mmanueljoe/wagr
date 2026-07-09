@@ -40,18 +40,23 @@ export async function destroySession(sessionId: string): Promise<void> {
   await redis.del(keyFor(sessionId))
 }
 
-// Cookie config. __Host- prefix means the cookie is only sent to the host
-// that set it (no parent-domain leaks). HttpOnly so JS can't read it.
-// Secure required by the __Host- prefix; we relax it to plain `wagr-session`
-// in dev because http://localhost can't set Secure cookies.
+// Cookie config. HttpOnly so JS can't read it. Three modes:
+//   - Prod                             → __Host- prefix, Secure, SameSite=Lax
+//   - Cross-site dev (Vercel + ngrok)  → wagr-session, Secure, SameSite=None
+//   - Local dev (localhost only)       → wagr-session, no Secure, SameSite=Lax
+// The __Host- prefix (prod) requires Secure and rejects Domain, hardening
+// against subdomain cookie shadowing. SameSite=None is the browser
+// requirement for cookies to travel on cross-origin fetches; browsers only
+// accept it alongside Secure, which is why both flip together.
 const isProd = env.NODE_ENV === 'production'
+const crossSite = env.SESSION_COOKIE_SAMESITE_NONE
 
 export const SESSION_COOKIE_NAME = isProd ? '__Host-wagr-session' : 'wagr-session'
 
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: isProd,
-  sameSite: 'lax' as const,
+  secure: isProd || crossSite,
+  sameSite: (crossSite ? 'none' : 'lax') as 'lax' | 'none',
   path: '/',
   maxAge: SESSION_TTL_SECONDS * 1000,
 }

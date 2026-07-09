@@ -40,6 +40,17 @@ export const env = createEnv({
     // GHS 16.67; below that we lose money on the advance. Override in dev
     // via .env when testing with small real amounts.
     MIN_ADVANCE_PESEWAS: z.coerce.number().int().positive().default(5000),
+
+    // Session cookie cross-site flag. Set to true when the web app is on a
+    // different registrable domain than the api (e.g. Vercel web + ngrok
+    // api during demo). Switches the session cookie from SameSite=Lax to
+    // SameSite=None; Secure so browsers ship it on cross-origin fetches.
+    // Requires https on both sides — cookies with Secure won't set over http.
+    // Leave unset for pure localhost dev where SameSite=Lax works.
+    SESSION_COOKIE_SAMESITE_NONE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true' || v === '1'),
     // Returned by Moolre when we POST /open/account/update with our callback
     // URL. Every webhook from Moolre includes this in the payload's `secret`
     // field — we verify on every incoming request.
