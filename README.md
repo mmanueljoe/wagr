@@ -14,8 +14,6 @@ asking the boss for a favour, borrowing from family, or an informal lender.
 The money they need usually already exists — it's the wages they've earned
 since the 1st. Wagr unlocks it.
 
-- **Live app:** _TODO: production URL_
-- **Demo video:** _TODO: video URL_
 - **Live demo script:** [docs/demo-script.md](docs/demo-script.md)
 
 ## How it works
@@ -62,7 +60,7 @@ which owns the per-API auth headers and the per-API network-code maps
 ```bash
 pnpm install
 cp apps/api/.env.example apps/api/.env    # fill in Supabase, Upstash, Moolre sandbox keys
-pnpm db:migrate && pnpm db:seed
+pnpm db:push && pnpm db:seed
 pnpm dev                                  # web on :3000, api on :3001
 
 # the pre-demo gate — drives the entire loop end to end:

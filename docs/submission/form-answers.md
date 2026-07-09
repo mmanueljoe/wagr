@@ -31,7 +31,7 @@ then get a WhatsApp payslip.
    polling and a background reconciler (never marks failed unless Moolre
    says txstatus 2).
 3. **Payments** — money in: employer float top-ups through the full 3-step
-   OTP flow, and payday recovery — both completed by HMAC-verified webhooks.
+   OTP flow, and payday recovery — both completed by secret-verified webhooks.
 4. **SMS** — instant worker status messages: advance requested, disbursed,
    or failed with a clear reason.
 5. **WhatsApp** — Meta-template payslips to workers and period summaries to
@@ -61,7 +61,5 @@ runs as a scripted smoke test we gate every demo on. Pilot recruitment with
 2–3 Accra SMEs (chop bar, construction crew, small shop) begins the week
 after submission.
 
-<!-- Fill these on submission day: -->
-- Live URL: _TODO_
-- Video: _TODO_
-- Contact: _TODO_
+Add the live URL, video URL, and contact details directly in the submission
+form once they are available.

@@ -144,21 +144,35 @@ export async function initiatePeriodClose(
     )
   }
 
-  // Same caveat as initiateFloatTopUp: Moolre may HTTP-200 with a body
-  // that says "rejected" (acknowledged=false). Without this check, the
-  // repayment row sits at pending forever, the dashboard spins, and no
-  // MoMo prompt is ever sent to the employer.
-  if (!paymentResult.acknowledged) {
-    const reason = `Moolre rejected the recovery request (code ${paymentResult.rawCode})`
+  // Period close does not have the OTP continuation endpoint that float
+  // top-ups have. If Moolre asks for OTP here, fail loudly instead of leaving
+  // the repayment pending forever while the dashboard/smoke test waits for a
+  // webhook that will never arrive.
+  if (paymentResult.state !== 'prompt_sent') {
+    const reason =
+      paymentResult.state === 'otp_required'
+        ? `Moolre requested OTP for payday recovery, but period-close OTP is not supported yet (code ${paymentResult.rawCode})`
+        : `Moolre rejected the recovery request (code ${paymentResult.rawCode})`
     logger.warn(
-      { repaymentId: row.id, employerId, moolreCode: paymentResult.rawCode },
-      'moolre payment not acknowledged — marking repayment failed',
+      {
+        repaymentId: row.id,
+        employerId,
+        moolreCode: paymentResult.rawCode,
+        paymentState: paymentResult.state,
+      },
+      'moolre payment did not send prompt — marking repayment failed',
     )
     await supabase
       .from('repayments')
       .update({ status: 'failed', failure_reason: reason })
       .eq('id', row.id)
-    throw new AppError('MOOLRE_PAYMENT_REJECTED', 502, reason)
+    throw new AppError(
+      paymentResult.state === 'otp_required'
+        ? 'PERIOD_CLOSE_OTP_UNSUPPORTED'
+        : 'MOOLRE_PAYMENT_REJECTED',
+      502,
+      reason,
+    )
   }
 
   await audit({
