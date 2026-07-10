@@ -1,5 +1,6 @@
 'use client'
 
+import { CSVUploadModal } from '@/components/dashboard/csv-upload-modal'
 import { EmployeesTable } from '@/components/dashboard/employees-table'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
@@ -16,7 +17,6 @@ import type { Employee } from '@wagr/types'
 import { ArrowLeft, ArrowRight, FileUp, UserPlus, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
 
 type SortKey = 'name-asc' | 'name-desc' | 'newest' | 'advances-desc'
 
@@ -27,6 +27,7 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortKey>('newest')
   const [page, setPage] = useState(1)
+  const [uploadModalOpen, setUploadModalOpen] = useState(false)
 
   const filtered = useMemo(
     () => filterAndSort(employees ?? [], search, sort),
@@ -49,12 +50,7 @@ export default function EmployeesPage() {
           </div>
           {employees && employees.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() =>
-                  toast.info('CSV bulk upload is coming soon — add workers one at a time for now.')
-                }
-              >
+              <Button variant="outline" onClick={() => setUploadModalOpen(true)}>
                 <FileUp className="h-4 w-4 mr-2" />
                 Upload CSV
               </Button>
@@ -81,12 +77,18 @@ export default function EmployeesPage() {
             title="Your workforce is empty"
             description="Add your first worker to start letting them request advances against wages they've already earned."
             action={
-              <Button asChild>
-                <Link href="/dashboard/employees/new">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add your first worker
-                </Link>
-              </Button>
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <Button asChild>
+                  <Link href="/dashboard/employees/new">
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Add your first worker
+                  </Link>
+                </Button>
+                <Button variant="outline" onClick={() => setUploadModalOpen(true)}>
+                  <FileUp className="h-4 w-4 mr-2" />
+                  Upload CSV
+                </Button>
+              </div>
             }
           />
         )}
@@ -163,6 +165,7 @@ export default function EmployeesPage() {
           </>
         )}
       </div>
+      <CSVUploadModal open={uploadModalOpen} onOpenChange={setUploadModalOpen} />
     </main>
   )
 }

@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { AppError } from '../errors/app-error'
 import {
+  bulkCreateEmployees,
   createEmployee,
   dismissEmployeeFlag,
   listEmployees,
@@ -11,6 +12,12 @@ export async function createEmployeeHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
   const employee = await createEmployee(req.user.employer_id, req.body)
   res.status(201).json(employee)
+}
+
+export async function bulkCreateEmployeesHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
+  const result = await bulkCreateEmployees(req.user.employer_id, req.body)
+  res.status(200).json(result)
 }
 
 export async function listEmployeesHandler(req: Request, res: Response) {

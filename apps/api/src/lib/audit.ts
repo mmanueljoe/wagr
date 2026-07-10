@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = [
   'period_close_failed',
   'whatsapp_summary_sent',
   'whatsapp_summary_failed',
+  'advance_retry_initiated',
   'employer_profile_updated',
 ] as const
 

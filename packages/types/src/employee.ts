@@ -23,6 +23,12 @@ export const createEmployeeSchema = z.object({
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>
 
+export const bulkCreateEmployeesSchema = z.object({
+  employees: z.array(createEmployeeSchema).max(500, 'Maximum 500 rows per upload'),
+})
+
+export type BulkCreateEmployeesInput = z.infer<typeof bulkCreateEmployeesSchema>
+
 export const setEmployeeActiveSchema = z.object({
   is_active: z.boolean(),
 })
