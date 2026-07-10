@@ -102,9 +102,9 @@ async function main(): Promise<void> {
           start_date: '2026-01-05',
         })
       }
-      const list = await getJson<{ employees: Employee[] }>('/employees')
-      if (list.employees.length !== 3) {
-        throw new Error(`expected 3 employees, got ${list.employees.length}`)
+      const list = await getJson<Employee[]>('/employees')
+      if (list.length !== 3) {
+        throw new Error(`expected 3 employees, got ${list.length}`)
       }
     })
 

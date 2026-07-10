@@ -11,6 +11,8 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "db:seed": "tsx --env-file=.env scripts/seed-demo.ts",
+    "demo:seed": "tsx --env-file=.env scripts/seed-demo.ts",
     "smoke": "tsx --env-file=.env scripts/smoke-test.ts",
     "test:ussd-sim": "tsx --env-file=.env scripts/smoke-test.ts --ussd-only"
   },
