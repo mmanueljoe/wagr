@@ -19,8 +19,8 @@ a USSD code on any phone — no app, no smartphone, no data — sees the wages
 they've already earned, and withdraws a portion to their MoMo wallet in under
 60 seconds, for a flat 3% fee. No interest, no debt: it's their own money,
 early. Employers onboard their team on a web dashboard, pre-fund a float,
-see every advance in real time, and settle automatically on payday — workers
-then get a WhatsApp payslip.
+see every advance in real time, and settle everything with one click on
+payday — workers then get a WhatsApp payslip.
 
 ## How we use Moolre (all five APIs)
 

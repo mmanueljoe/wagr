@@ -299,7 +299,11 @@ async function errorSummary(res: Response): Promise<string> {
   const body = (await res.json().catch(() => null)) as {
     error?: { code?: string; message?: string }
   } | null
-  return body?.error ? `${body.error.code}: ${body.error.message}` : 'no parseable error body'
+  if (!body?.error) return 'no parseable error body'
+  // A validation message can echo the offending value back (momo number,
+  // phone), so scrub digit runs before this hits the terminal.
+  const message = (body.error.message ?? '').replace(/\+?\d{9,}/g, '⟨redacted⟩')
+  return `${body.error.code}: ${message}`
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -331,7 +335,11 @@ async function ussd(
 
 function captureCookie(res: Response): void {
   const setCookie = res.headers.get('set-cookie')
-  if (setCookie) cookie = setCookie.split(';')[0] ?? ''
+  // Throwing here (rather than keeping the previous cookie) makes sure a
+  // login that silently stops setting cookies fails this step instead of
+  // riding on the registration session.
+  if (!setCookie) throw new Error('response did not set a session cookie')
+  cookie = setCookie.split(';')[0] ?? ''
 }
 
 // ─── Assertions + runner ────────────────────────────────────────────────

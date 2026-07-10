@@ -73,7 +73,8 @@ Judges trust a demo more after they've seen it refuse to break:
 ## If something goes wrong live
 
 - USSD step hangs longer than ~5s → say "network — it happens", redial.
-  Sessions are stateless per dial; a fresh dial starts clean.
+  A redial starts clean because Moolre issues a new sessionId and the Redis
+  session is keyed on it; the stale session just expires on its TTL.
 - Transfer slow → the advances page shows `pending`; explain the
   polling/reconciler honestly and move to the employer side. Check back —
   it will flip to `disbursed`.
