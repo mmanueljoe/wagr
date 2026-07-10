@@ -40,6 +40,11 @@ items it removed.
       types for `float_top_ups` / `wagr_ledger` / employer momo columns.
       Effort: 30 min with DB access.
 
+- [ ] **Smoke-test responses are cast, not validated.** `getJson<T>` in
+      `apps/api/scripts/smoke-test.ts` trusts the response shape via a cast.
+      Zod-parsing each response against the schemas in `packages/types`
+      would catch API drift in the script itself. Flagged by review on the
+      July 10 sync PR; deferred past the submission. Effort: 2 hours.
 - [ ] **Web hook tests.** Hooks are pure-ish wrappers around `api.ts` calls;
       worth a small Vitest suite to lock in their contracts.
       Effort: 2 hours when the dashboard work expands them.
