@@ -2,7 +2,9 @@ import type { AdvanceListItem, AdvanceStatus, MoneyPesewas } from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
+import { initiateTransfer } from '../lib/moolre'
 import { supabase } from '../lib/supabase'
+import { pollUntilTerminal } from '../lib/transfer-polling'
 import { getCurrentPayPeriod } from '../lib/wage-engine/earned-wage'
 import { evaluateAdvancePattern } from './advance-pattern-service'
 import {
@@ -393,4 +395,92 @@ function roundCedis(value: number): number {
 // the union — narrow defensively.
 function extractMomo(joined: { momo_number: string } | { momo_number: string }[]): string {
   return Array.isArray(joined) ? (joined[0]?.momo_number ?? '') : joined.momo_number
+}
+
+export async function retryFailedAdvance(employerId: string, id: string): Promise<void> {
+  // 1. Get the failed advance request and check it belongs to the employer
+  const { data: advance, error } = await supabase
+    .from('advance_requests')
+    .select(
+      'id, employee_id, requested_amount, fee_amount, net_disbursed, status, employees!inner(id, momo_number, network, is_active)',
+    )
+    .eq('id', id)
+    .eq('employer_id', employerId)
+    .maybeSingle()
+
+  if (error || !advance) {
+    logger.error({ err: error, id, employerId }, 'failed to look up advance for retry')
+    throw new AppError('ADVANCE_NOT_FOUND', 404, 'Advance request not found')
+  }
+
+  if (advance.status !== 'failed') {
+    throw new AppError('INVALID_STATE', 400, 'Only failed advances can be retried')
+  }
+
+  const employee = Array.isArray(advance.employees) ? advance.employees[0] : advance.employees
+  if (!employee || !employee.is_active) {
+    throw new AppError('EMPLOYEE_INACTIVE', 400, 'Cannot retry advance for an inactive worker')
+  }
+
+  // 2. Debit the float again (since it was refunded when it failed)
+  const requestedCedis = advance.requested_amount
+  await debitFloat(employerId, requestedCedis)
+
+  // 3. Generate a new external reference for Moolre to prevent deduplication blocks
+  const newExternalRef = `wagr-adv-${crypto.randomUUID()}`
+
+  // 4. Reset status back to pending, clear failure_reason, update external ref
+  const { error: updateError } = await supabase
+    .from('advance_requests')
+    .update({
+      status: 'pending',
+      failure_reason: null,
+      moolre_external_ref: newExternalRef,
+      moolre_transaction_id: null,
+    })
+    .eq('id', id)
+
+  if (updateError) {
+    // Refund float on failure
+    await refundFloat(employerId, requestedCedis).catch((err) =>
+      logger.error({ err, id }, 'failed to refund float after retry update error'),
+    )
+    logger.error({ err: updateError, id }, 'failed to reset advance status for retry')
+    throw new AppError('ADVANCE_UPDATE_FAILED', 500, 'Could not reset advance status')
+  }
+
+  await audit({
+    action: 'advance_retry_initiated',
+    actor: 'employer',
+    employerId,
+    employeeId: employee.id,
+    metadata: {
+      advance_request_id: id,
+      new_external_ref: newExternalRef,
+    },
+  })
+
+  // 5. Initiate transfer and poll
+  try {
+    await initiateTransfer({
+      amount: advance.net_disbursed,
+      receiver: employee.momo_number,
+      network: employee.network,
+      externalRef: newExternalRef,
+    })
+  } catch (err) {
+    logger.error(
+      { err, advanceRequestId: id },
+      'moolre initiate transfer failed on retry — marking failed again and refunding float',
+    )
+    await markAdvanceFailed(id, 'Moolre initiate transfer failed during retry').catch((markErr) =>
+      logger.error({ err: markErr, advanceRequestId: id }, 'mark-failed during retry also failed'),
+    )
+    return
+  }
+
+  // Poll in the background
+  pollUntilTerminal(id, newExternalRef).catch((err) =>
+    logger.error({ err, advanceRequestId: id }, 'unexpected polling error on retry'),
+  )
 }
