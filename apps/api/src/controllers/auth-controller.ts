@@ -7,7 +7,13 @@ import {
   destroySession,
   getSession,
 } from '../lib/session'
-import { getMe, loginEmployer, registerEmployer } from '../services/auth-service'
+import {
+  getMe,
+  getProfile,
+  loginEmployer,
+  registerEmployer,
+  updateProfile,
+} from '../services/auth-service'
 
 // Thin handlers: read req, call service, set cookie if needed, send res.
 // Never format error responses inline — throw and let error-handler do it.
@@ -49,4 +55,16 @@ export async function logoutHandler(req: Request, res: Response) {
 export async function meHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
   res.json(await getMe(req.user))
+}
+
+export async function getProfileHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
+  const profile = await getProfile(req.user.employer_id)
+  res.json(profile)
+}
+
+export async function updateProfileHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError('UNAUTHENTICATED', 401, 'Not logged in')
+  const profile = await updateProfile(req.user.employer_id, req.body)
+  res.json(profile)
 }
