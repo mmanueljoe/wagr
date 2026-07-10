@@ -65,6 +65,7 @@ When Jira renumbers a story (delete + recreate, project reset, etc.), only the *
 | dashboard-advances | Advance requests list with filters | |
 | payroll-flow | Process payroll from dashboard | |
 | dashboard-credit-flags | Credit scoring flags on employee list | |
+| dashboard-settings | Employer profile view + edit on the settings page | |
 
 ## Notifications (Epic: Notifications)
 

@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS = [
   'whatsapp_summary_sent',
   'whatsapp_summary_failed',
   'advance_retry_initiated',
+  'employer_profile_updated',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]
