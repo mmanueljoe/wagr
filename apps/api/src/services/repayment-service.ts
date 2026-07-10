@@ -130,13 +130,7 @@ export async function initiatePeriodClose(
       { err, repaymentId: row.id, employerId },
       'moolre initiate payment failed — marking repayment failed',
     )
-    await supabase
-      .from('repayments')
-      .update({
-        status: 'failed',
-        failure_reason: 'Moolre initiate payment call failed',
-      })
-      .eq('id', row.id)
+    await markRepaymentFailed(row.id, employerId, totalCedis, 'Moolre initiate payment call failed')
     throw new AppError(
       'MOOLRE_PAYMENT_FAILED',
       502,
@@ -162,10 +156,7 @@ export async function initiatePeriodClose(
       },
       'moolre payment did not send prompt — marking repayment failed',
     )
-    await supabase
-      .from('repayments')
-      .update({ status: 'failed', failure_reason: reason })
-      .eq('id', row.id)
+    await markRepaymentFailed(row.id, employerId, totalCedis, reason)
     throw new AppError(
       paymentResult.state === 'otp_required'
         ? 'PERIOD_CLOSE_OTP_UNSUPPORTED'
