@@ -15,8 +15,8 @@ if a figure appears on screen, it must be a real value from the demo run.
 | 4 | 0:18–0:26 | USSD: enter 50 → confirm screen with fee + net | "She asks for 50 cedis of her own earned wages. Wagr shows the fee up front — 3%, flat, no interest." | `GHS 50 · fee GHS 1.50 · no interest` |
 | 5 | 0:26–0:33 | USSD: PIN entry → "Request submitted" | "She confirms with her PIN…" | `Confirmed with her PIN` |
 | 6 | 0:33–0:45 | **The money shot:** MoMo credit alert + SMS landing, phone in hand, real notification sound. Show a visible clock/stopwatch if the run is fast | "…and the money is in her MoMo wallet. That's the whole product. Under a minute, start to finish." | `Money in MoMo — under 60 seconds` |
-| 7 | 0:45–0:52 | Dashboard: advances page showing the GHS 50 row `disbursed`; quick pan to float balance | "Her employer sees every advance in real time, funds the float, and settles automatically on payday." | `Employers stay in control` |
-| 8 | 0:52–0:57 | Dashboard: close period → cut to WhatsApp payslip on the worker phone | "On payday, Wagr reconciles itself — and every worker gets a WhatsApp payslip." | `Payday closes itself` |
+| 7 | 0:45–0:52 | Dashboard: advances page showing the GHS 50 row `disbursed`; quick pan to float balance | "Her employer sees every advance in real time, funds the float, and settles everything on payday with one click." | `Employers stay in control` |
+| 8 | 0:52–0:57 | Dashboard: close period → cut to WhatsApp payslip on the worker phone | "On payday, the employer closes the period — Wagr recovers every advance, and every worker gets a WhatsApp payslip." | `One click closes payday` |
 | 9 | 0:57–1:00 | Wagr wordmark on Deep Midnight Blue, gold accent | "Wagr. Don't wait for payday. Built on Moolre." | `Wagr — Don't wait for payday. Built on Moolre.` |
 
 ## Recording checklist
@@ -41,7 +41,7 @@ if a figure appears on screen, it must be a real value from the demo run.
 0:26 Confirmed with her PIN.
 0:33 Money in MoMo — under 60 seconds.
 0:45 Employers stay in control.
-0:52 Payday closes itself.
+0:52 One click closes payday.
 0:57 Wagr. Don't wait for payday. Built on Moolre.
 ```
 
