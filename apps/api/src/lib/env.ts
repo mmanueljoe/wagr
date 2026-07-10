@@ -23,8 +23,34 @@ export const env = createEnv({
     // instance. Both go in the same X-API-VASKEY header at request time,
     // just with different values depending on which API we're calling.
     MOOLRE_SMS_VASKEY: z.string().min(1),
+    // Approved sender ID for the SMS service. Max 11 chars per most SMSCs.
+    // Moolre rejects sends with an unapproved sender ID, so this has to match
+    // exactly what was approved in the Moolre dashboard.
+    MOOLRE_SMS_SENDER_ID: z.string().min(1).max(11),
     MOOLRE_WHATSAPP_VASKEY: z.string().min(1),
     MOOLRE_ACCOUNT_NUMBER: z.string().min(1),
+    // Business email Moolre attaches to hosted-checkout payment links.
+    // Should match the email the Moolre account was created with. Moolre
+    // uses this for receipts / account records on their side.
+    WAGR_BUSINESS_EMAIL: z.string().email(),
+
+    // Minimum advance amount in pesewas. Default GHS 50 (5000 pesewas) — the
+    // floor keeps UX clean (no GHS 5 advances in a payslip) and ensures our
+    // 3% fee stays above Moolre's per-transaction cost. Break-even is
+    // GHS 16.67; below that we lose money on the advance. Override in dev
+    // via .env when testing with small real amounts.
+    MIN_ADVANCE_PESEWAS: z.coerce.number().int().positive().default(5000),
+
+    // Session cookie cross-site flag. Set to true when the web app is on a
+    // different registrable domain than the api (e.g. Vercel web + ngrok
+    // api during demo). Switches the session cookie from SameSite=Lax to
+    // SameSite=None; Secure so browsers ship it on cross-origin fetches.
+    // Requires https on both sides — cookies with Secure won't set over http.
+    // Leave unset for pure localhost dev where SameSite=Lax works.
+    SESSION_COOKIE_SAMESITE_NONE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true' || v === '1'),
     // Returned by Moolre when we POST /open/account/update with our callback
     // URL. Every webhook from Moolre includes this in the payload's `secret`
     // field — we verify on every incoming request.

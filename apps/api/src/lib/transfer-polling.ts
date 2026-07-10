@@ -14,7 +14,13 @@ import { getTransferStatus } from './moolre'
 //                 never to treat this as failure)
 
 const DEFAULT_INTERVAL_MS = 5_000
-const DEFAULT_MAX_ATTEMPTS = 24 // 24 × 5s = 2 minutes
+// 60 × 5s = 5 minutes. Wider than the old 2-minute budget because Moolre's
+// status endpoint sometimes propagates the terminal state slowly for
+// synchronously-settled transfers (observed 2026-07-08: OBGH01 responses
+// never resolved through /transact/status in a 2-min window). The initial
+// /transact/transfer response is now the primary success signal (see
+// initiateTransfer); polling is the fallback for genuinely-pending transfers.
+const DEFAULT_MAX_ATTEMPTS = 60
 
 export interface PollOptions {
   intervalMs?: number

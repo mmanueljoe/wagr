@@ -13,6 +13,7 @@ import {
   type CreatedAdvance,
   createAdvanceRequest,
   getCurrentPeriodDisbursedPesewas,
+  markAdvanceDisbursed,
   markAdvanceFailed,
 } from '../services/advance-service'
 import {
@@ -202,8 +203,9 @@ async function runDisbursement(
     return
   }
 
+  let transferResult: Awaited<ReturnType<typeof initiateTransfer>>
   try {
-    await initiateTransfer({
+    transferResult = await initiateTransfer({
       amount: advance.netCedis,
       receiver: employee.momo_number,
       network: employee.network,
@@ -220,8 +222,38 @@ async function runDisbursement(
     return
   }
 
-  // Poll in the background. Returns when terminal (or budget exhausted) —
-  // we don't await this from the caller's perspective.
+  logger.info(
+    {
+      advanceRequestId: advance.id,
+      txStatus: transferResult.txStatus,
+      moolreCode: transferResult.rawCode,
+    },
+    'moolre transfer initiated',
+  )
+
+  // Moolre occasionally returns the terminal state on the initial call
+  // (observed: code OBGH01 "Pay out Successful" for synchronously-settled
+  // transfers). Short-circuit here — polling for an already-completed
+  // transfer wastes the 2-minute budget and risks a reconciler force-fail.
+  if (transferResult.txStatus === 1) {
+    await markAdvanceDisbursed(advance.id, transferResult.transactionId).catch((err) =>
+      logger.error(
+        { err, advanceRequestId: advance.id },
+        'mark-disbursed on initial success failed',
+      ),
+    )
+    return
+  }
+  if (transferResult.txStatus === 2) {
+    const reason = `Moolre reported the transfer as failed (code ${transferResult.rawCode})`
+    await markAdvanceFailed(advance.id, reason).catch((err) =>
+      logger.error({ err, advanceRequestId: advance.id }, 'mark-failed on initial failure failed'),
+    )
+    return
+  }
+
+  // Non-terminal (Pending or Unknown). Poll in the background — returns
+  // when terminal or when the budget runs out.
   pollUntilTerminal(advance.id, advance.externalRef).catch((err) =>
     logger.error({ err, advanceRequestId: advance.id }, 'unexpected polling error'),
   )

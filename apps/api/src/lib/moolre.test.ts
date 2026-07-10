@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError } from '../errors/app-error'
 import {
+  generatePaymentLink,
   getTransferStatus,
   initiatePayment,
   initiateTransfer,
@@ -128,6 +129,28 @@ describe('initiateTransfer', () => {
     })
     expect(result.txStatus).toBe(3)
   })
+
+  it('promotes to txstatus 1 (Successful) when code is OBGH01 even if envelope status=0', async () => {
+    // Real live response 2026-07-08: Moolre reports terminal success on the
+    // initial /transfer call with envelope status=0 and code OBGH01. Without
+    // this promotion the poller would waste 2 min chasing an already-done
+    // transfer and the reconciler would force-fail it.
+    mockFetchOnce({
+      status: 0,
+      code: 'OBGH01',
+      message: 'Pay out Successful',
+      data: { transactionid: 'mr-tx-99' },
+    })
+    const result = await initiateTransfer({
+      amount: 5,
+      receiver: '0241235993',
+      network: 'mtn',
+      externalRef: 'wagr-adv-obgh',
+    })
+    expect(result.txStatus).toBe(1)
+    expect(result.transactionId).toBe('mr-tx-99')
+    expect(result.rawCode).toBe('OBGH01')
+  })
 })
 
 describe('getTransferStatus', () => {
@@ -141,6 +164,8 @@ describe('getTransferStatus', () => {
     expect(url).toMatch(/\/open\/transact\/status$/)
     const body = JSON.parse((init.body as string) ?? '{}')
     expect(body.externalref).toBe('wagr-adv-abc')
+    expect(body.type).toBe(1)
+    expect(body.idtype).toBe(2)
 
     expect(result.txStatus).toBe(1)
     expect(result.transactionId).toBe('mr-tx-12345')
@@ -221,6 +246,101 @@ describe('initiatePayment', () => {
   })
 })
 
+describe('generatePaymentLink', () => {
+  const LINK_ENVELOPE = {
+    status: 1,
+    code: 'POS09',
+    message: 'POS payment link successfully generated.',
+    data: {
+      authorization_url: 'https://pos.moolre.com/RZWs1yB6amGjNoiEQvlHPS5uqgp3Jc',
+      reference: 'uuid-1234',
+    },
+  }
+
+  it('posts to /embed/link with X-API-PUBKEY and returns the hosted URL', async () => {
+    const fetchMock = mockFetchOnce(LINK_ENVELOPE)
+
+    const result = await generatePaymentLink({
+      amountCedis: 180,
+      email: 'boss@wagr.app',
+      externalRef: 'wagr-float-abc',
+      redirectUrl: 'https://wagr.app/employer/float',
+      expirationMinutes: 15,
+      metadata: { topUpId: 'topup-1' },
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/embed\/link$/)
+    expect(init.method).toBe('POST')
+
+    const headers = init.headers as Record<string, string>
+    expect(headers['X-API-USER']).toBeTruthy()
+    expect(headers['X-API-PUBKEY']).toBeTruthy()
+    // The private transfers key MUST NOT leak into a Payments-family call.
+    expect(headers['X-API-KEY']).toBeUndefined()
+
+    const body = JSON.parse(init.body as string)
+    expect(body).toMatchObject({
+      type: 1,
+      amount: '180.00',
+      email: 'boss@wagr.app',
+      externalref: 'wagr-float-abc',
+      redirect: 'https://wagr.app/employer/float',
+      reusable: '0',
+      expiration_time: 15,
+      currency: 'GHS',
+      metadata: { topUpId: 'topup-1' },
+    })
+    expect(body.accountnumber).toBeTruthy()
+
+    expect(result).toEqual({
+      authorizationUrl: 'https://pos.moolre.com/RZWs1yB6amGjNoiEQvlHPS5uqgp3Jc',
+      reference: 'uuid-1234',
+    })
+  })
+
+  it('omits metadata when the caller does not provide it', async () => {
+    mockFetchOnce(LINK_ENVELOPE)
+    await generatePaymentLink({
+      amountCedis: 50,
+      email: 'x@y.co',
+      externalRef: 'r',
+      redirectUrl: 'https://wagr.app/x',
+      expirationMinutes: 15,
+    })
+    const fetchSpy = global.fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }
+    const body = JSON.parse((fetchSpy.mock.calls.at(-1)?.[1].body as string) ?? '{}')
+    expect(body.metadata).toBeUndefined()
+  })
+
+  it('throws AppError when Moolre returns a response without authorization_url', async () => {
+    mockFetchOnce({ status: 1, code: 'POS09', message: 'ok', data: {} })
+    await expect(
+      generatePaymentLink({
+        amountCedis: 50,
+        email: 'x@y.co',
+        externalRef: 'r',
+        redirectUrl: 'https://wagr.app/x',
+        expirationMinutes: 15,
+      }),
+    ).rejects.toBeInstanceOf(AppError)
+  })
+
+  it('throws AppError on a non-OK HTTP response', async () => {
+    mockFetchOnce({ status: 0, code: 'AIN01' }, { ok: false, status: 401 })
+    await expect(
+      generatePaymentLink({
+        amountCedis: 50,
+        email: 'x@y.co',
+        externalRef: 'r',
+        redirectUrl: 'https://wagr.app/x',
+        expirationMinutes: 15,
+      }),
+    ).rejects.toBeInstanceOf(AppError)
+  })
+})
+
 describe('sendSms', () => {
   const SMS_ENVELOPE = {
     status: 1,
@@ -248,7 +368,7 @@ describe('sendSms', () => {
     const body = JSON.parse(init.body as string)
     expect(body).toMatchObject({
       type: 1,
-      senderid: 'Wagr',
+      senderid: 'wagr-sms',
       messages: [{ recipient: '0241235993', message: 'Hi Ama' }],
     })
     // ref is optional — when not provided, it should NOT be in the body.
