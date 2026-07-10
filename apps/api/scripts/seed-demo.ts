@@ -248,6 +248,34 @@ async function deleteExistingDemoUser(): Promise<void> {
   const existing = data.users.find((user) => user.email?.toLowerCase() === DEMO_EMAIL.toLowerCase())
   if (!existing) return
 
+  // The money tables (advance_requests, repayments, float_top_ups) restrict
+  // deletes on employers by design, so clear them before the auth delete —
+  // otherwise the employers cascade hits the RESTRICT and the reset fails.
+  const employerId = existing.id
+  const { data: advanceRows } = await supabase
+    .from('advance_requests')
+    .select('id')
+    .eq('employer_id', employerId)
+  const advanceIds = (advanceRows ?? []).map((row) => row.id)
+  if (advanceIds.length > 0) {
+    await must(
+      supabase.from('wagr_ledger').delete().in('advance_request_id', advanceIds),
+      'clear demo ledger rows',
+    )
+  }
+  await must(
+    supabase.from('advance_requests').delete().eq('employer_id', employerId),
+    'clear demo advances',
+  )
+  await must(
+    supabase.from('repayments').delete().eq('employer_id', employerId),
+    'clear demo repayments',
+  )
+  await must(
+    supabase.from('float_top_ups').delete().eq('employer_id', employerId),
+    'clear demo float top-ups',
+  )
+
   const { error: deleteError } = await supabase.auth.admin.deleteUser(existing.id)
   if (deleteError) throw new Error(`could not reset existing demo user: ${deleteError.message}`)
   log(`Reset existing demo user ${DEMO_EMAIL}`)
