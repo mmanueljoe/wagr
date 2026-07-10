@@ -23,6 +23,7 @@
     "db:push": "pnpm dlx supabase db push",
     "db:types": "pnpm dlx supabase gen types typescript --linked > packages/types/src/supabase.ts",
     "db:seed": "pnpm --filter @wagr/api db:seed",
+    "demo:seed": "pnpm --filter @wagr/api demo:seed",
     "prepare": "husky"
   },
   "devDependencies": {
