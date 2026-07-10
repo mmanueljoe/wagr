@@ -1,5 +1,6 @@
 'use client'
 
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -8,7 +9,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useRetryAdvance } from '@/hooks/use-retry-advance'
 import { type AdvanceListItem, type AdvanceStatus, formatGhs } from '@wagr/types'
+import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 const STATUS_LABELS: Record<AdvanceStatus, string> = {
   pending: 'Pending',
@@ -43,6 +47,7 @@ export function AdvancesTable({ advances }: Readonly<AdvancesTableProps>) {
             <TableHead className="text-right">Worker received</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Requested</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -69,11 +74,48 @@ export function AdvancesTable({ advances }: Readonly<AdvancesTableProps>) {
               <TableCell className="text-sm text-wagr-gray">
                 {formatRequestedAt(a.requested_at)}
               </TableCell>
+              <TableCell className="text-right">
+                {a.status === 'failed' && <RetryButton advanceId={a.id} />}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+function RetryButton({ advanceId }: Readonly<{ advanceId: string }>) {
+  const retry = useRetryAdvance()
+
+  function handleRetry() {
+    retry.mutate(advanceId, {
+      onSuccess: () => {
+        toast.success('Disbursement retry initiated!')
+      },
+      onError: (err) => {
+        toast.error(err.message || 'Retry failed')
+      },
+    })
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      onClick={handleRetry}
+      disabled={retry.isPending}
+      className="text-xs py-1 h-7 text-wagr-navy hover:text-white hover:bg-wagr-navy"
+    >
+      {retry.isPending ? (
+        <>
+          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+          Retrying…
+        </>
+      ) : (
+        'Retry'
+      )}
+    </Button>
   )
 }
 
