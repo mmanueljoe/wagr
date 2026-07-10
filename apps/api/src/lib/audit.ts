@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = [
   'period_close_failed',
   'whatsapp_summary_sent',
   'whatsapp_summary_failed',
+  'employer_profile_updated',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

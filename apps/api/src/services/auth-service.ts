@@ -1,4 +1,10 @@
-import type { AuthUser, LoginEmployerInput, RegisterEmployerInput } from '@wagr/types'
+import type {
+  AuthUser,
+  EmployerProfile,
+  LoginEmployerInput,
+  RegisterEmployerInput,
+  UpdateProfileInput,
+} from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -129,4 +135,55 @@ export async function getMe(session: SessionData): Promise<AuthUser> {
     employer_id: session.employer_id,
     email: session.email,
   }
+}
+
+export async function getProfile(employerId: string): Promise<EmployerProfile> {
+  const { data, error } = await supabase
+    .from('employers')
+    .select('id, company_name, email, phone, industry, pay_date, created_at')
+    .eq('id', employerId)
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to fetch employer profile')
+    throw new AppError('PROFILE_FETCH_FAILED', 500, 'Could not fetch profile')
+  }
+  if (!data) {
+    throw new AppError('EMPLOYER_NOT_FOUND', 404, 'Employer not found')
+  }
+
+  return data as EmployerProfile
+}
+
+export async function updateProfile(
+  employerId: string,
+  input: UpdateProfileInput,
+): Promise<EmployerProfile> {
+  const { data, error } = await supabase
+    .from('employers')
+    .update({
+      company_name: input.company_name,
+      phone: input.phone,
+      industry: input.industry,
+      pay_date: input.pay_date,
+    })
+    .eq('id', employerId)
+    .select('id, company_name, email, phone, industry, pay_date, created_at')
+    .maybeSingle()
+
+  if (error) {
+    logger.error({ err: error, employerId }, 'failed to update employer profile')
+    throw new AppError('PROFILE_UPDATE_FAILED', 500, 'Could not update profile')
+  }
+  if (!data) {
+    throw new AppError('EMPLOYER_NOT_FOUND', 404, 'Employer not found')
+  }
+
+  await audit({
+    action: 'employer_profile_updated',
+    actor: 'employer',
+    employerId,
+  })
+
+  return data as EmployerProfile
 }

@@ -34,10 +34,27 @@ export const loginEmployerSchema = z.object({
 
 export type LoginEmployerInput = z.infer<typeof loginEmployerSchema>
 
-// The shape every auth success endpoint (register, login, /me) returns.
-// Same keys, same types, every time — the frontend learns it once.
 export interface AuthUser {
   id: string
   employer_id: string
   email: string
+}
+
+export const updateProfileSchema = z.object({
+  company_name: z.string().min(2, 'Company name must be at least 2 characters'),
+  phone: z.string().regex(GH_PHONE_REGEX, 'Enter a valid Ghana phone number'),
+  industry: z.enum(EMPLOYER_INDUSTRIES),
+  pay_date: z.number().int().min(1).max(31),
+})
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>
+
+export interface EmployerProfile {
+  id: string
+  company_name: string
+  email: string
+  phone: string
+  industry: EmployerIndustry
+  pay_date: number
+  created_at: string
 }
