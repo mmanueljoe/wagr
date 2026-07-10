@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "tsx --env-file=.env scripts/smoke-test.ts",
+    "test:ussd-sim": "tsx --env-file=.env scripts/smoke-test.ts --ussd-only"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",

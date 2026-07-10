@@ -18,6 +18,7 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "test:ussd-sim": "pnpm --filter api test:ussd-sim",
+    "smoke": "pnpm --filter api smoke",
     "db:link": "pnpm dlx supabase link",
     "db:push": "pnpm dlx supabase db push",
     "db:types": "pnpm dlx supabase gen types typescript --linked > packages/types/src/supabase.ts",

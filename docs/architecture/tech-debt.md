@@ -24,6 +24,27 @@ items it removed.
 
 ## Open
 
+- [ ] **Rate limiting is entirely missing.** CLAUDE.md mandates Redis-backed
+      limits (auth 5/min/IP, advance 1/min/employee, webhook ceiling) and a
+      cross-session PIN lockout (5 wrong in 10 min → 30 min lock). None of it
+      exists — only the per-session 3-strike PIN check in `ussd-flow.ts`.
+      Deliberately deferred out of the July 12 submission sprint (not a demo
+      path); must land before any real pilot money flows.
+      Effort: half a day (middleware + Redis counters + audit rows).
+- [ ] **Transactional float debit.** `debitFloat`/`refundFloat` in
+      advance-service and float-funding-service are read-then-write; the
+      `float_balance >= 0` CHECK is the only race guard. A Postgres function
+      doing the debit atomically closes the gap. Effort: 2 hours.
+- [ ] **`pnpm db:types` regen + drop `looseDb` casts.** float-funding-service
+      and advance-service carry `any`-cast Supabase clients pending generated
+      types for `float_top_ups` / `wagr_ledger` / employer momo columns.
+      Effort: 30 min with DB access.
+
+- [ ] **Smoke-test responses are cast, not validated.** `getJson<T>` in
+      `apps/api/scripts/smoke-test.ts` trusts the response shape via a cast.
+      Zod-parsing each response against the schemas in `packages/types`
+      would catch API drift in the script itself. Flagged by review on the
+      July 10 sync PR; deferred past the submission. Effort: 2 hours.
 - [ ] **Web hook tests.** Hooks are pure-ish wrappers around `api.ts` calls;
       worth a small Vitest suite to lock in their contracts.
       Effort: 2 hours when the dashboard work expands them.
