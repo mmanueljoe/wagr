@@ -1,4 +1,10 @@
-import type { CreateEmployeeInput, Employee, EmployeeNetwork, MoneyPesewas } from '@wagr/types'
+import type {
+  BulkCreateEmployeesInput,
+  CreateEmployeeInput,
+  Employee,
+  EmployeeNetwork,
+  MoneyPesewas,
+} from '@wagr/types'
 import { AppError } from '../errors/app-error'
 import { audit } from '../lib/audit'
 import { logger } from '../lib/logger'
@@ -340,4 +346,83 @@ export async function dismissEmployeeFlag(
   })
 
   return rowToEmployee(data)
+}
+
+export async function bulkCreateEmployees(
+  employerId: string,
+  input: BulkCreateEmployeesInput,
+): Promise<{ inserted: number; failed: { index: number; reason: string }[] }> {
+  const { employees } = input
+  let inserted = 0
+  const failed: { index: number; reason: string }[] = []
+
+  const { data: existingEmployees, error: lookupErr } = await supabase
+    .from('employees')
+    .select('momo_number')
+    .eq('employer_id', employerId)
+
+  if (lookupErr) {
+    logger.error(
+      { err: lookupErr, employerId },
+      'failed to lookup existing employees for bulk import',
+    )
+    throw new AppError('EMPLOYEE_BULK_LOOKUP_FAILED', 500, 'Could not lookup existing workers')
+  }
+
+  const existingMomoNumbers = new Set(existingEmployees?.map((e) => e.momo_number) ?? [])
+  const momoNumbersSeen = new Set<string>()
+
+  let i = 0
+  for (const emp of employees) {
+    const index = i++
+
+    if (momoNumbersSeen.has(emp.momo_number)) {
+      failed.push({ index, reason: 'Duplicate MoMo number in the CSV upload' })
+      continue
+    }
+    momoNumbersSeen.add(emp.momo_number)
+
+    if (existingMomoNumbers.has(emp.momo_number)) {
+      failed.push({ index, reason: 'A worker with this MoMo number is already on your list' })
+      continue
+    }
+
+    try {
+      const salaryCedis = emp.monthly_salary_pesewas / PESEWAS_PER_CEDI
+      const { data, error } = await supabase
+        .from('employees')
+        .insert({
+          employer_id: employerId,
+          full_name: emp.full_name,
+          momo_number: emp.momo_number,
+          network: emp.network,
+          monthly_salary: salaryCedis,
+          start_date: emp.start_date,
+        })
+        .select('id')
+        .single()
+
+      if (error || !data) {
+        if (error?.code === '23505') {
+          failed.push({ index, reason: 'A worker with this MoMo number is already on your list' })
+        } else {
+          logger.error({ err: error, employerId }, 'bulk create employee row failed')
+          failed.push({ index, reason: error?.message ?? 'Could not add worker' })
+        }
+      } else {
+        inserted++
+        await audit({
+          action: 'employee_added',
+          actor: 'employer',
+          employerId,
+          employeeId: data.id,
+          metadata: { network: emp.network, bulk: true },
+        })
+      }
+    } catch (err) {
+      failed.push({ index, reason: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  }
+
+  return { inserted, failed }
 }
